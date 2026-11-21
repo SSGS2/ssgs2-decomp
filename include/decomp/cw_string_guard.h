@@ -1,0 +1,3 @@
+#ifndef DECOMP_CW_STRING_GUARD_H
+#define DECOMP_CW_STRING_GUARD_H
+#endif

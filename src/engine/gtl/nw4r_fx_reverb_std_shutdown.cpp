@@ -1,0 +1,35 @@
+// Translation unit 0x8040B02C-0x8040B08C (1 functions; a bundle of decomp-toolkit's units; the original file edges inside it are unknown).
+// Function names: config/R2PE9B/symbols.txt. Plain names go inside extern "C".
+
+#include "sdk_protos.h"
+
+namespace gtl { namespace nw4r {
+struct FxReverbStd {
+    char effectBase[12];
+    unsigned char active; // +0x0C: first byte of the allocator/effect context passed below.
+    char effectParameters[31];
+    char reverb[1]; // +0x2C: opaque reverb state; this view does not describe its extent.
+};
+} }
+
+extern "C" {
+void gtl_AudioEffects_InstallAllocatorHooks(void*, unsigned int*, unsigned int*);
+void AudioReverbStd_ReleaseBuffers(void*);
+void gtl_AudioEffects_RestoreAllocatorHooks(void*, unsigned int, unsigned int);
+
+// Release active reverb buffers while temporarily installing the effect's allocator hooks.
+// self is borrowed and remains allocated. Inactive effects are a no-op.
+// The flag is cleared before release; saved process-wide hooks are restored afterward.
+// Restoration is on the normal path only; no exception guard is installed here.
+void gtl_nw4r_FxReverbStd_Shutdown(gtl::nw4r::FxReverbStd* self) {
+    if (self->active) {
+        unsigned int previousAllocHook;
+        unsigned int previousFreeHook;
+        self->active = 0;
+        gtl_AudioEffects_InstallAllocatorHooks(&self->active, &previousAllocHook, &previousFreeHook);
+        AudioReverbStd_ReleaseBuffers(self->reverb);
+        gtl_AudioEffects_RestoreAllocatorHooks(&self->active, previousAllocHook, previousFreeHook);
+    }
+}
+
+} // extern "C"

@@ -1,0 +1,51 @@
+# IDE folders
+.idea/
+.vs/
+
+# Caches
+__pycache__
+.mypy_cache
+.cache/
+
+# Never commit game data: disc images, executables, modules, extracted files
+orig/*/*
+!orig/*/.gitkeep
+*.dol
+*.rel
+*.rso
+*.sel
+*.elf
+*.o
+*.map
+*.MAP
+*.iso
+*.wbfs
+*.rvz
+*.wia
+*.gcm
+*.gcz
+*.ciso
+*.nfs
+*.tgc
+*.wad
+*.bin
+# Disassembly contains game bytes
+asm/
+*.s
+# Compiler archives
+*.zip
+*.dll
+*.exe
+
+# Build files
+build/
+.ninja_*
+build.ninja
+
+# decompctx output
+ctx.*
+*.ctx
+
+# Generated configs
+objdiff.json
+compile_commands.json

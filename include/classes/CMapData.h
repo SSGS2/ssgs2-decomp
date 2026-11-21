@@ -1,0 +1,167 @@
+// Non-virtual declarations only: no virtual keyword, no base class, so the compiler emits no vtable or RTTI.
+// The original vtable (__vt__8CMapData) and typeinfo stay data symbols.
+#ifndef CLASSES_CMAPDATA_H
+#define CLASSES_CMAPDATA_H
+
+// RTTI base class: CEcbCtl<STYPE_CMAPDATA> (not declared here)
+class CMapData {
+public:
+    void* vtbl;  // offset 0: original vtable pointer (__vt__8CMapData); other members: add as found
+
+    // vtable slots (current symbol; implement as a method with its real signature):
+    // slot 0: CMapData_vfunc_0 (medium)  void vfunc_0();
+    // slot 1: vfunc_1__8CMapDataFv (medium)  void vfunc_1();
+    // slot 2: vfunc_2__8CMapDataFv (medium)  void vfunc_2();
+    // slot 3: vfunc_3__8CMapDataFv (medium)  void vfunc_3();
+    // slot 4: vfunc_4__8CMapDataFv (medium)  void vfunc_4();
+    // slot 5: vfunc_5__8CMapDataFv (medium)  void vfunc_5();
+    // slot 6: vfunc_6__8CMapDataFv (medium)  void vfunc_6();
+    // slot 7: vfunc_7__8CMapDataFv (medium)  void vfunc_7();
+    // slot 8: vfunc_8__8CMapDataFv (medium)  void vfunc_8();
+    // slot 9: vfunc_9__8CMapDataFv (medium)  void vfunc_9();
+    // slot 10: vfunc_10__8CMapDataFv (medium)  void vfunc_10();
+    // slot 11: vfunc_11__8CMapDataFv (medium)  void vfunc_11();
+    // slot 12: vfunc_12__8CMapDataFv (medium)  void vfunc_12();
+    // slot 13: vfunc_13__8CMapDataFv (medium)  void vfunc_13();
+    // slot 14: vfunc_14__8CMapDataFv (medium)  void vfunc_14();
+    // slot 15: vfunc_15__8CMapDataFv (medium)  void vfunc_15();
+    // slot 16: vfunc_16__8CMapDataFv (medium)  void vfunc_16();
+    // slot 17: vfunc_17__8CMapDataFv (medium)  void vfunc_17();
+    // slot 18: vfunc_18__8CMapDataFv (medium)  void vfunc_18();
+    // slot 19: vfunc_19__8CMapDataFv (medium)  void vfunc_19();
+    // slot 20: vfunc_20__8CMapDataFv (medium)  void vfunc_20();
+    // slot 21: vfunc_21__8CMapDataFv (medium)  void vfunc_21();
+    // slot 22: vfunc_22__8CMapDataFv (medium)  void vfunc_22();
+    // slot 23: vfunc_23__8CMapDataFv (medium)  void vfunc_23();
+    // slot 24: vfunc_24__8CMapDataFv (medium)  void vfunc_24();
+    // slot 25: vfunc_25__8CMapDataFv (medium)  void vfunc_25();
+    // slot 26: vfunc_26__8CMapDataFv (medium)  void vfunc_26();
+    // slot 27: vfunc_27__8CMapDataFv (medium)  void vfunc_27();
+    // slot 28: vfunc_28__8CMapDataFv (medium)  void vfunc_28();
+    // slot 29: vfunc_29__8CMapDataFv (medium)  void vfunc_29();
+    // slot 30: vfunc_30__8CMapDataFv (medium)  void vfunc_30();
+    // slot 31: vfunc_31__8CMapDataFv (medium)  void vfunc_31();
+    // slot 32: vfunc_32__8CMapDataFv (medium)  void vfunc_32();
+    // slot 33: vfunc_33__8CMapDataFv (medium)  void vfunc_33();
+    // slot 34: vfunc_34__8CMapDataFv (medium)  void vfunc_34();
+    // slot 35: vfunc_35__8CMapDataFv (medium)  void vfunc_35();
+    // slot 36: vfunc_36__8CMapDataFv (medium)  void vfunc_36();
+    // slot 37: vfunc_37__8CMapDataFv (medium)  void vfunc_37();
+    // slot 38: vfunc_38__8CMapDataFv (medium)  void vfunc_38();
+    // slot 39: vfunc_39__8CMapDataFv (medium)  void vfunc_39();
+    // slot 40: vfunc_40__8CMapDataFv (medium)  void vfunc_40();
+    // slot 41: vfunc_41__8CMapDataFv (medium)  void vfunc_41();
+    // slot 42: vfunc_42__8CMapDataFv (medium)  void vfunc_42();
+    // slot 43: vfunc_43__8CMapDataFv (medium)  void vfunc_43();
+    // slot 44: vfunc_44__8CMapDataFv (medium)  void vfunc_44();
+    // slot 45: vfunc_45__8CMapDataFv (medium)  void vfunc_45();
+    // slot 46: vfunc_46__8CMapDataFv (medium)  void vfunc_46();
+    // slot 47: vfunc_47__8CMapDataFv (medium)  void vfunc_47();
+    // slot 48: vfunc_48__8CMapDataFv (medium)  void vfunc_48();
+    // slot 49: vfunc_49__8CMapDataFv (medium)  void vfunc_49();
+    // slot 50: vfunc_50__8CMapDataFv (medium)  void vfunc_50();
+    // slot 51: vfunc_51__8CMapDataFv (medium)  void vfunc_51();
+    // slot 52: vfunc_52__8CMapDataFv (medium)  void vfunc_52();
+    // slot 53: vfunc_53__8CMapDataFv (medium)  void vfunc_53();
+    // slot 54: vfunc_54__8CMapDataFv (medium)  void vfunc_54();
+    // slot 55: vfunc_55__8CMapDataFv (medium)  void vfunc_55();
+    // slot 56: vfunc_56__8CMapDataFv (medium)  void vfunc_56();
+    // slot 57: vfunc_57__8CMapDataFv (medium)  void vfunc_57();
+    // slot 58: vfunc_58__8CMapDataFv (medium)  void vfunc_58();
+    // slot 59: vfunc_59__8CMapDataFv (medium)  void vfunc_59();
+    // slot 60: vfunc_60__8CMapDataFv (medium)  void vfunc_60();
+    // slot 61: vfunc_61__8CMapDataFv (medium)  void vfunc_61();
+    // slot 62: vfunc_62__8CMapDataFv (medium)  void vfunc_62();
+    // slot 63: vfunc_63__8CMapDataFv (medium)  void vfunc_63();
+    // slot 64: vfunc_64__8CMapDataFv (medium)  void vfunc_64();
+    // slot 65: vfunc_65__8CMapDataFv (medium)  void vfunc_65();
+    // slot 66: vfunc_66__8CMapDataFv (medium)  void vfunc_66();
+    // slot 67: vfunc_67__8CMapDataFv (medium)  void vfunc_67();
+    // slot 68: vfunc_68__8CMapDataFv (medium)  void vfunc_68();
+    // slot 69: vfunc_69__8CMapDataFv (medium)  void vfunc_69();
+    // slot 70: vfunc_70__8CMapDataFv (medium)  void vfunc_70();
+    // slot 71: vfunc_71__8CMapDataFv (medium)  void vfunc_71();
+    // slot 72: vfunc_72__8CMapDataFv (medium)  void vfunc_72();
+    // slot 73: vfunc_73__8CMapDataFv (medium)  void vfunc_73();
+    // slot 74: vfunc_74__8CMapDataFv (medium)  void vfunc_74();
+    // slot 75: vfunc_75__8CMapDataFv (medium)  void vfunc_75();
+
+    // Slots 1-75 all return a constant nonzero "yes" answer; they carry no state.
+    int vfunc_1();
+    int vfunc_2();
+    int vfunc_3();
+    int vfunc_4();
+    int vfunc_5();
+    int vfunc_6();
+    int vfunc_7();
+    int vfunc_8();
+    int vfunc_9();
+    int vfunc_10();
+    int vfunc_11();
+    int vfunc_12();
+    int vfunc_13();
+    int vfunc_14();
+    int vfunc_15();
+    int vfunc_16();
+    int vfunc_17();
+    int vfunc_18();
+    int vfunc_19();
+    int vfunc_20();
+    int vfunc_21();
+    int vfunc_22();
+    int vfunc_23();
+    int vfunc_24();
+    int vfunc_25();
+    int vfunc_26();
+    int vfunc_27();
+    int vfunc_28();
+    int vfunc_29();
+    int vfunc_30();
+    int vfunc_31();
+    int vfunc_32();
+    int vfunc_33();
+    int vfunc_34();
+    int vfunc_35();
+    int vfunc_36();
+    int vfunc_37();
+    int vfunc_38();
+    int vfunc_39();
+    int vfunc_40();
+    int vfunc_41();
+    int vfunc_42();
+    int vfunc_43();
+    int vfunc_44();
+    int vfunc_45();
+    int vfunc_46();
+    int vfunc_47();
+    int vfunc_48();
+    int vfunc_49();
+    int vfunc_50();
+    int vfunc_51();
+    int vfunc_52();
+    int vfunc_53();
+    int vfunc_54();
+    int vfunc_55();
+    int vfunc_56();
+    int vfunc_57();
+    int vfunc_58();
+    int vfunc_59();
+    int vfunc_60();
+    int vfunc_61();
+    int vfunc_62();
+    int vfunc_63();
+    int vfunc_64();
+    int vfunc_65();
+    int vfunc_66();
+    int vfunc_67();
+    int vfunc_68();
+    int vfunc_69();
+    int vfunc_70();
+    int vfunc_71();
+    int vfunc_72();
+    int vfunc_73();
+    int vfunc_74();
+    int vfunc_75();
+};
+
+#endif  // CLASSES_CMAPDATA_H

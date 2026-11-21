@@ -1,0 +1,20 @@
+# Super Swing Golf Season 2 (USA), disc R2PE9B rev 0. See config.example.yml in dtk-template for all keys.
+object_base: orig/R2PE9B
+object: sys/main.dol
+hash: d89a0066a52e8140f11e0907879441a5836e00d5
+symbols: config/R2PE9B/symbols.txt
+splits: config/R2PE9B/splits.txt
+# Wii CodeWarrior linkers write .comment version 14.
+mw_comment_version: 14
+# Data words that look like pointers into exception tables (@etb_) but are constants: render-state values
+# 0x80020000 (lbl_804715B0 list), indirect-matrix words 0x80010000 (lbl_804AA40C), flags. As relocations they
+# change whenever our extab differs from the original's, which every all-source and port link does.
+block_relocations:
+  - source: 0x8047171C
+  - source: 0x8047175C
+  - source: 0x804A5FB0
+  - source: 0x804AA58C
+  - source: 0x804AA5CC
+  - source: 0x804CA698
+  - source: 0x804D8F60
+

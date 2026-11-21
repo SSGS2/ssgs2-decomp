@@ -1,0 +1,4058 @@
+Sections:
+	.init       type:code align:4
+	extab       type:rodata align:32
+	extabindex  type:rodata align:16
+	.text       type:code align:16
+	.ctors      type:rodata align:32
+	.dtors      type:rodata align:32
+	.rodata     type:rodata align:32
+	.data       type:data align:32
+	.bss        type:bss align:64
+	.sdata      type:data align:32
+	.sbss       type:bss align:16
+	.sdata2     type:rodata align:16
+	.sbss2      type:bss align:32
+
+game/system/heap_alloc_and_operator_new.cpp:
+	extab       start:0x800064E0 end:0x80006600
+	extabindex  start:0x8002FB20 end:0x8002FB68
+	.text       start:0x80042B00 end:0x800441A0
+
+game/system/memory_heap_init_and_alloc.cpp:
+	extab       start:0x80006600 end:0x800066C0
+	extabindex  start:0x8002FB68 end:0x8002FBB0
+	.text       start:0x800441A0 end:0x8004576C
+
+game/system/gsr_resource_bitmap_and_heap.cpp:
+	extab       start:0x800066C0 end:0x800067C0
+	extabindex  start:0x8002FBB0 end:0x8002FC64
+	.text       start:0x8004576C end:0x80046274
+	.ctors      start:0x80461FA4 end:0x80461FAC
+
+game/system/std_string_and_shared_ptr_deleter.cpp:
+	extab       start:0x800067C0 end:0x80006868
+	extabindex  start:0x8002FC64 end:0x8002FCAC
+	.text       start:0x80046274 end:0x80046850
+
+game/chara/pet_animation_init_and_dtors.cpp:
+	extab       start:0x80006868 end:0x80006880
+	extabindex  start:0x8002FCAC end:0x8002FCD0
+	.text       start:0x80046850 end:0x80046A38
+	.ctors      start:0x80461FAC end:0x80461FB8
+
+game/chara/pet_animation.cpp:
+	extab       start:0x80006880 end:0x800068DC
+	extabindex  start:0x8002FCD0 end:0x8002FD3C
+	.text       start:0x80046A38 end:0x80047498
+
+game/chara/pet_texture_manager_part1.cpp:
+	extab       start:0x800068DC end:0x80006904
+	extabindex  start:0x8002FD3C end:0x8002FD48
+	.text       start:0x80047498 end:0x80047564
+	.ctors      start:0x80461FB8 end:0x80461FBC
+
+game/chara/pet_texture_manager_part2.cpp:
+	extab       start:0x80006904 end:0x8000691C
+	extabindex  start:0x8002FD48 end:0x8002FD6C
+	.text       start:0x80047564 end:0x80047884
+
+game/chara/puppet_bone_nodes.cpp:
+	extab       start:0x8000691C end:0x80006A8C
+	extabindex  start:0x8002FD6C end:0x8002FDF0
+	.text       start:0x80047884 end:0x80048334
+	.ctors      start:0x80461FBC end:0x80461FC8
+
+game/system/generic3d_pool_registry.cpp:
+	extab       start:0x80006A8C end:0x80006BFC
+	extabindex  start:0x8002FDF0 end:0x8002FE5C
+	.text       start:0x80048334 end:0x80049254
+
+game/system/resource_path_and_file_utils.cpp:
+	extab       start:0x80006BFC end:0x80006DE4
+	extabindex  start:0x8002FE5C end:0x8002FE8C
+	.text       start:0x80049254 end:0x8004A814
+	.ctors      start:0x80461FC8 end:0x80461FCC
+
+game/system/raw_file_stream_and_matrix_utils.cpp:
+	extab       start:0x80006DE4 end:0x80006E80
+	extabindex  start:0x8002FE8C end:0x8002FF1C
+	.text       start:0x8004A814 end:0x8004BF18
+	.ctors      start:0x80461FCC end:0x80461FD0
+
+game/system/wvector_affine_matrix_math.cpp:
+	extab       start:0x80006E80 end:0x80006EE0
+	extabindex  start:0x8002FF1C end:0x8002FFAC
+	.text       start:0x8004BF18 end:0x8004CF18
+
+game/system/math_matrix_quat_vec_utils.cpp:
+	extab       start:0x80006EE0 end:0x80006F40
+	extabindex  start:0x8002FFAC end:0x8003003C
+	.text       start:0x8004CF18 end:0x8004DFB0
+	.ctors      start:0x80461FD0 end:0x80461FD4
+
+game/system/woverlay_resource_ctor.cpp:
+	extab       start:0x80006F40 end:0x80006F5C
+	extabindex  start:0x8003003C end:0x80030048
+	.text       start:0x8004DFB0 end:0x8004E01C
+
+game/ui/overlay_sprite_drawing.cpp:
+	extab       start:0x80006F5C end:0x80006FBC
+	extabindex  start:0x80030048 end:0x800300B4
+	.text       start:0x8004E01C end:0x8004F8B4
+
+game/chara/puppet_construction_and_init.cpp:
+	extab       start:0x80006FBC end:0x8000706C
+	extabindex  start:0x800300B4 end:0x800300C0
+	.text       start:0x8004F8B4 end:0x8004FC28
+	.ctors      start:0x80461FD4 end:0x80461FD8
+
+game/chara/wpuppet_model_bone_animation.cpp:
+	extab       start:0x8000706C end:0x8000793C
+	extabindex  start:0x800300C0 end:0x800304D4
+	.text       start:0x8004FC28 end:0x8005DA74
+
+sdk/rbtree_rebalance.cpp:
+	.text       start:0x8005DA74 end:0x8005E4D8
+
+game/chara/puppet_resource_name_refcounts.cpp:
+	extab       start:0x8000793C end:0x8000795C
+	extabindex  start:0x800304D4 end:0x80030504
+	.text       start:0x8005E4D8 end:0x8005F290
+	.ctors      start:0x80461FD8 end:0x80461FDC
+
+game/golf/course_model_part_samples_bounds.cpp:
+	extab       start:0x8000795C end:0x800079F8
+	extabindex  start:0x80030504 end:0x80030510
+	.text       start:0x8005F290 end:0x8005FA9C
+
+game/chara/wpuppet_mesh_bounds.cpp:
+	extab       start:0x800079F8 end:0x80007A18
+	extabindex  start:0x80030510 end:0x80030528
+	.text       start:0x8005FA9C end:0x8005FE74
+
+game/system/shared_resource_loader.cpp:
+	extab       start:0x80007A18 end:0x80007AEC
+	extabindex  start:0x80030528 end:0x80030534
+	.text       start:0x8005FE74 end:0x8006028C
+	.ctors      start:0x80461FDC end:0x80461FE0
+
+game/system/resource_manager_cache_and_loading.cpp:
+	extab       start:0x80007AEC end:0x800082C0
+	extabindex  start:0x80030534 end:0x800306FC
+	.text       start:0x8006028C end:0x80065B4C
+
+game/system/string_storage_and_container_utils.cpp:
+	extab       start:0x800082C0 end:0x800082D0
+	extabindex  start:0x800306FC end:0x80030714
+	.text       start:0x80065B4C end:0x80065D10
+
+game/system/owned_allocation_list_cleanup.cpp:
+	extab       start:0x800082D0 end:0x800082E8
+	extabindex  start:0x80030714 end:0x80030738
+	.text       start:0x80065D10 end:0x80065F78
+
+game/system/wview_camera_projection.cpp:
+	extab       start:0x800082E8 end:0x800083DC
+	extabindex  start:0x80030738 end:0x80030858
+	.text       start:0x80065F78 end:0x80068524
+	.ctors      start:0x80461FE0 end:0x80461FF0
+	.sdata2     start:0x805DD828 end:0x805DD880
+
+game/system/endian_format_and_binary_table.cpp:
+	extab       start:0x800083DC end:0x80008524
+	extabindex  start:0x80030858 end:0x800308B8
+	.text       start:0x80068524 end:0x80069B34
+	.ctors      start:0x80461FF0 end:0x80461FF8
+
+game/modes/pangya_enemy_data_stub_vfuncs.cpp:
+	.text       start:0x80069B34 end:0x80069C94
+
+game/modes/party_balloon_system.cpp:
+	extab       start:0x80008524 end:0x80008B44
+	extabindex  start:0x800308B8 end:0x800309E4
+	.text       start:0x80069C94 end:0x8006DAE8
+	.ctors      start:0x80461FF8 end:0x80462000
+	.sdata2     start:0x805DD888 end:0x805DD8E8
+
+game/fx/balloon_system.cpp:
+	extab       start:0x80008B44 end:0x80008B94
+	extabindex  start:0x800309E4 end:0x80030A2C
+	.text       start:0x8006DAE8 end:0x8006EA6C
+	.ctors      start:0x80462000 end:0x80462004
+
+game/system/game_input_manager_cursor_rumble.cpp:
+	extab       start:0x80008B94 end:0x80008D5C
+	extabindex  start:0x80030A2C end:0x80030B04
+	.text       start:0x8006EA6C end:0x800719F4
+
+game/save/save_data_records_and_inventory_init.cpp:
+	extab       start:0x80008D5C end:0x80008D84
+	extabindex  start:0x80030B04 end:0x80030B40
+	.text       start:0x800719F4 end:0x80073060
+	.ctors      start:0x80462004 end:0x80462008
+
+game/save/save_data_records_and_defaults.cpp:
+	extab       start:0x80008D84 end:0x80009040
+	extabindex  start:0x80030B40 end:0x80030C9C
+	.text       start:0x80073060 end:0x800779EC
+
+game/ui/layout_cursor_pointer_controller.cpp:
+	extab       start:0x80009040 end:0x80009068
+	extabindex  start:0x80030C9C end:0x80030CD8
+	.text       start:0x800779EC end:0x80077F74
+	.ctors      start:0x80462008 end:0x80462010
+
+game/ui/layout_elements_and_hit_testing.cpp:
+	extab       start:0x80009068 end:0x80009364
+	extabindex  start:0x80030CD8 end:0x80030DE0
+	.text       start:0x80077F74 end:0x8007D2D4
+	.rodata     start:0x80463A20 end:0x80463A88
+	.sdata      start:0x805DA598 end:0x805DA5A0
+	.sdata2     start:0x805DD978 end:0x805DD9B0
+
+game/system/name_entry_and_misc_utilities.cpp:
+	extab       start:0x80009364 end:0x80009464
+	extabindex  start:0x80030DE0 end:0x80030E34
+	.text       start:0x8007D2D4 end:0x8007DB30
+	.ctors      start:0x80462010 end:0x8046201C
+
+game/ui/name_entry_soft_keyboard.cpp:
+	extab       start:0x80009464 end:0x8000950C
+	extabindex  start:0x80030E34 end:0x80030EE8
+	.text       start:0x8007DB30 end:0x8007F694
+	.sdata2     start:0x805DD9B8 end:0x805DD9C8
+
+game/system/shared_texture_resource.cpp:
+	extab       start:0x8000950C end:0x800097AC
+	extabindex  start:0x80030EE8 end:0x80030FA8
+	.text       start:0x8007F694 end:0x80080CF4
+	.ctors      start:0x8046201C end:0x8046202C
+
+game/ui/shop2_main_task.cpp:
+	extab       start:0x800097AC end:0x800097E4
+	extabindex  start:0x80030FA8 end:0x80030FE4
+	.text       start:0x80080CF4 end:0x80080FB4
+
+game/ui/shop2_task_and_soft_keyboard.cpp:
+	extab       start:0x800097E4 end:0x800098B8
+	extabindex  start:0x80030FE4 end:0x80031038
+	.text       start:0x80080FB4 end:0x8008199C
+	.ctors      start:0x8046202C end:0x80462034
+
+game/system/wgeneric3d_render_queue_and_soft_keyboard.cpp:
+	extab       start:0x800098B8 end:0x80009968
+	extabindex  start:0x80031038 end:0x80031140
+	.text       start:0x8008199C end:0x80086CE0
+	.ctors      start:0x80462034 end:0x80462038
+	.sdata2     start:0x805DD9D0 end:0x805DDA18
+
+engine/gtl/wgeneric3dr_renderer_core.cpp:
+	extab       start:0x80009968 end:0x800099D4
+	extabindex  start:0x80031140 end:0x800311AC
+	.text       start:0x80086CE0 end:0x800879D0
+	.ctors      start:0x80462038 end:0x8046203C
+
+engine/gtl/wgeneric3dr_immediate_renderer.cpp:
+	extab       start:0x800099D4 end:0x800099FC
+	extabindex  start:0x800311AC end:0x800311E8
+	.text       start:0x800879D0 end:0x80088DE0
+	.ctors      start:0x8046203C end:0x80462040
+
+game/ui/party_item_select_ui.cpp:
+	extab       start:0x800099FC end:0x80009AA0
+	extabindex  start:0x800311E8 end:0x80031200
+	.text       start:0x80088DE0 end:0x800893A0
+
+game/modes/party_item_select.cpp:
+	extab       start:0x80009AA0 end:0x80009BC4
+	extabindex  start:0x80031200 end:0x80031290
+	.text       start:0x800893A0 end:0x8008B524
+	.sdata2     start:0x805DDA38 end:0x805DDA40
+
+game/modes/party_main_task_and_phf_helpers.cpp:
+	extab       start:0x80009BC4 end:0x80009CC4
+	extabindex  start:0x80031290 end:0x80031314
+	.text       start:0x8008B524 end:0x8008C090
+	.ctors      start:0x80462040 end:0x80462050
+
+game/modes/story_conte_cutscene.cpp:
+	extab       start:0x80009CC4 end:0x80009F38
+	extabindex  start:0x80031314 end:0x8003141C
+	.text       start:0x8008C090 end:0x80090284
+	.sdata2     start:0x805DDA70 end:0x805DDA80
+
+game/modes/story_event_script_shared_state.cpp:
+	extab       start:0x80009F38 end:0x80009FF0
+	extabindex  start:0x8003141C end:0x800314A0
+	.text       start:0x80090284 end:0x80091824
+	.ctors      start:0x80462050 end:0x8046205C
+
+game/modes/event_conte_script_commands.cpp:
+	extab       start:0x80009FF0 end:0x8000A0FC
+	extabindex  start:0x800314A0 end:0x8003150C
+	.text       start:0x80091824 end:0x80092804
+
+game/modes/event_conte_script_interpreter.cpp:
+	extab       start:0x8000A0FC end:0x8000B30C
+	extabindex  start:0x8003150C end:0x80031800
+	.text       start:0x80092804 end:0x8009F7F0
+	.sdata2     start:0x805DDAB8 end:0x805DDAC0
+
+game/modes/story_message_event_load.cpp:
+	extab       start:0x8000B30C end:0x8000B45C
+	extabindex  start:0x80031800 end:0x8003189C
+	.text       start:0x8009F7F0 end:0x800A0DD0
+	.ctors      start:0x8046205C end:0x80462064
+
+game/modes/story_message_window.cpp:
+	extab       start:0x8000B45C end:0x8000B4DC
+	extabindex  start:0x8003189C end:0x800318F0
+	.text       start:0x800A0DD0 end:0x800A2158
+
+game/modes/story_event_message_commands.cpp:
+	extab       start:0x8000B4DC end:0x8000B578
+	extabindex  start:0x800318F0 end:0x80031938
+	.text       start:0x800A2158 end:0x800A38AC
+	.ctors      start:0x80462064 end:0x80462068
+
+game/modes/party_goods_item_display.cpp:
+	extab       start:0x8000B578 end:0x8000BBF4
+	extabindex  start:0x80031938 end:0x80031AAC
+	.text       start:0x800A38AC end:0x800A7CA4
+	.ctors      start:0x80462068 end:0x80462074
+	.sdata2     start:0x805DDB60 end:0x805DDB68
+
+game/ui/font_atlas_page_loading.cpp:
+	extab       start:0x8000BBF4 end:0x8000BC34
+	extabindex  start:0x80031AAC end:0x80031AB8
+	.text       start:0x800A7CA4 end:0x800A7E64
+
+game/ui/font_atlas_and_mwstring.cpp:
+	extab       start:0x8000BC34 end:0x8000BD18
+	extabindex  start:0x80031AB8 end:0x80031B3C
+	.text       start:0x800A7E64 end:0x800A8920
+
+game/ui/msgdraw_text_reveal_and_pair_vector.cpp:
+	extab       start:0x8000BD18 end:0x8000BE20
+	extabindex  start:0x80031B3C end:0x80031BC0
+	.text       start:0x800A8920 end:0x800A9430
+	.ctors      start:0x80462074 end:0x8046207C
+
+game/ui/msgdraw_text_rendering.cpp:
+	extab       start:0x8000BE20 end:0x8000C050
+	extabindex  start:0x80031BC0 end:0x80031D04
+	.text       start:0x800A9430 end:0x800AE594
+	.sdata2     start:0x805DDBC0 end:0x805DDBC8
+
+game/ui/text_format_trees_and_msg_resources.cpp:
+	extab       start:0x8000C050 end:0x8000C254
+	extabindex  start:0x80031D04 end:0x80031D88
+	.text       start:0x800AE594 end:0x800AF820
+	.ctors      start:0x8046207C end:0x80462080
+
+sdk/mw_string_stream_and_text_tags.cpp:
+	extab       start:0x8000C254 end:0x8000D2E4
+	extabindex  start:0x80031D88 end:0x80031FF8
+	.text       start:0x800AF820 end:0x800BA958
+
+game/ui/bp_sprite_animation_and_draw_callbacks.cpp:
+	extab       start:0x8000D2E4 end:0x8000D324
+	extabindex  start:0x80031FF8 end:0x80032058
+	.text       start:0x800BA958 end:0x800BB334
+	.ctors      start:0x80462080 end:0x80462088
+	.sdata2     start:0x805DDC10 end:0x805DDC18
+
+game/ui/bp_layout_animation_and_sprite_draw.cpp:
+	extab       start:0x8000D324 end:0x8000D374
+	extabindex  start:0x80032058 end:0x800320D0
+	.text       start:0x800BB334 end:0x800BC91C
+
+game/ui/bp_sprite_controller_and_drawing.cpp:
+	extab       start:0x8000D374 end:0x8000D3D4
+	extabindex  start:0x800320D0 end:0x80032160
+	.text       start:0x800BC91C end:0x800BDF64
+	.ctors      start:0x80462088 end:0x8046208C
+	.sdata2     start:0x805DDC28 end:0x805DDC30
+
+game/ui/bp_sprite_script_commands.cpp:
+	extab       start:0x8000D3D4 end:0x8000D47C
+	extabindex  start:0x80032160 end:0x8003225C
+	.text       start:0x800BDF64 end:0x800BF4E0
+	.ctors      start:0x8046208C end:0x80462094
+
+game/ui/b2d_file_scripts_and_input.cpp:
+	extab       start:0x8000D47C end:0x8000D4E4
+	extabindex  start:0x8003225C end:0x800322F8
+	.text       start:0x800BF4E0 end:0x800C0C18
+	.ctors      start:0x80462094 end:0x804620A0
+
+game/ui/b2d_sprite_and_bp_texture_draw.cpp:
+	extab       start:0x8000D4E4 end:0x8000D56C
+	extabindex  start:0x800322F8 end:0x8003237C
+	.text       start:0x800C0C18 end:0x800C1FB4
+	.ctors      start:0x804620A0 end:0x804620A8
+	.sdata2     start:0x805DDC50 end:0x805DDC70
+
+game/system/bp_ctrl_entry_manager.cpp:
+	extab       start:0x8000D56C end:0x8000D670
+	extabindex  start:0x8003237C end:0x8003240C
+	.text       start:0x800C1FB4 end:0x800C2F30
+
+game/ui/ui_group_and_bp_edit_sprite.cpp:
+	extab       start:0x8000D670 end:0x8000D7FC
+	extabindex  start:0x8003240C end:0x800324B4
+	.text       start:0x800C2F30 end:0x800C4568
+	.ctors      start:0x804620A8 end:0x804620B0
+	.data       start:0x804ACD90 end:0x804ACDAC
+	.sdata      start:0x805DA840 end:0x805DA850
+	.sdata2     start:0x805DDC88 end:0x805DDC98
+
+game/system/bp_object_and_loader_teardown.cpp:
+	extab       start:0x8000D7FC end:0x8000D834
+	extabindex  start:0x800324B4 end:0x800324D8
+	.text       start:0x800C4568 end:0x800C4C08
+
+game/ui/bp_object_sprite_resources.cpp:
+	extab       start:0x8000D834 end:0x8000DB94
+	extabindex  start:0x800324D8 end:0x800325BC
+	.text       start:0x800C4C08 end:0x800C7630
+
+game/ui/bp_sprite_pool_and_texture_binding.cpp:
+	extab       start:0x8000DB94 end:0x8000DD08
+	extabindex  start:0x800325BC end:0x8003267C
+	.text       start:0x800C7630 end:0x800C850C
+	.ctors      start:0x804620B0 end:0x804620BC
+
+game/system/spd_sprite_manager.cpp:
+	extab       start:0x8000DD08 end:0x8000DFF8
+	extabindex  start:0x8003267C end:0x80032754
+	.text       start:0x800C850C end:0x800CA914
+	.sdata2     start:0x805DDCB0 end:0x805DDCC0
+
+game/system/task_registry_actor_and_debug_text.cpp:
+	extab       start:0x8000DFF8 end:0x8000E10C
+	extabindex  start:0x80032754 end:0x800327F0
+	.text       start:0x800CA914 end:0x800CBF34
+	.ctors      start:0x804620BC end:0x804620C4
+	.sdata2     start:0x805DDCC0 end:0x805DDCC8
+
+game/golf/ball_actor_and_ambient_sound.cpp:
+	extab       start:0x8000E10C end:0x8000E3AC
+	extabindex  start:0x800327F0 end:0x800329E8
+	.text       start:0x800CBF34 end:0x800D1108
+	.ctors      start:0x804620C4 end:0x804620D8
+	.sdata2     start:0x805DDCD8 end:0x805DDD90
+
+game/system/token_parser_and_bubble.cpp:
+	extab       start:0x8000E3AC end:0x8000E4D0
+	extabindex  start:0x800329E8 end:0x80032ACC
+	.text       start:0x800D1108 end:0x800D2860
+	.ctors      start:0x804620D8 end:0x804620E4
+	.sdata2     start:0x805DDDA0 end:0x805DDDA8
+
+game/golf/camera_input_and_ground_view.cpp:
+	extab       start:0x8000E4D0 end:0x8000E500
+	extabindex  start:0x80032ACC end:0x80032B14
+	.text       start:0x800D2860 end:0x800D3DB4
+	.sdata2     start:0x805DDE30 end:0x805DDE38
+
+game/golf/camera_movement_and_input.cpp:
+	extab       start:0x8000E500 end:0x8000E538
+	extabindex  start:0x80032B14 end:0x80032B68
+	.text       start:0x800D3DB4 end:0x800D5208
+	.ctors      start:0x804620E4 end:0x804620E8
+	.sdata2     start:0x805DDE80 end:0x805DDE88
+
+game/golf/camera_work_aliases_and_containers.cpp:
+	extab       start:0x8000E538 end:0x8000E7E4
+	extabindex  start:0x80032B68 end:0x80032BBC
+	.text       start:0x800D5208 end:0x800D6968
+
+game/golf/camera_work_string_maps.cpp:
+	extab       start:0x8000E7E4 end:0x8000E898
+	extabindex  start:0x80032BBC end:0x80032C28
+	.text       start:0x800D6968 end:0x800D80CC
+
+game/golf/camera_work_modes.cpp:
+	extab       start:0x8000E898 end:0x8000E8C8
+	extabindex  start:0x80032C28 end:0x80032C70
+	.text       start:0x800D80CC end:0x800D89AC
+
+game/golf/camera_work_shot_cameras.cpp:
+	extab       start:0x8000E8C8 end:0x8000EA94
+	extabindex  start:0x80032C70 end:0x80032E50
+	.text       start:0x800D89AC end:0x800E1318
+	.sdata2     start:0x805DDEA8 end:0x805DE030
+
+game/golf/camera_resource_groups.cpp:
+	extab       start:0x8000EA94 end:0x8000EB78
+	extabindex  start:0x80032E50 end:0x80032EA4
+	.text       start:0x800E1318 end:0x800E2A58
+
+game/golf/camera_work_resource_trees.cpp:
+	extab       start:0x8000EB78 end:0x8000EBA0
+	extabindex  start:0x80032EA4 end:0x80032EE0
+	.text       start:0x800E2A58 end:0x800E3DE8
+
+game/golf/camera_work_animation_resources.cpp:
+	extab       start:0x8000EBA0 end:0x8000EC38
+	extabindex  start:0x80032EE0 end:0x80032F1C
+	.text       start:0x800E3DE8 end:0x800E4CD4
+
+game/system/resource_group_tree_tables.cpp:
+	extab       start:0x8000EC38 end:0x8000EC94
+	extabindex  start:0x80032F1C end:0x80032F4C
+	.text       start:0x800E4CD4 end:0x800E5FFC
+
+game/system/string_map_tree_and_length_error.cpp:
+	extab       start:0x8000EC94 end:0x8000ED7C
+	extabindex  start:0x80032F4C end:0x80032F7C
+	.text       start:0x800E5FFC end:0x800E7340
+
+game/system/camera_string_map_containers.cpp:
+	extab       start:0x8000ED7C end:0x8000EE68
+	extabindex  start:0x80032F7C end:0x80032FB8
+	.text       start:0x800E7340 end:0x800E8708
+
+game/ui/clock_hud_and_camera_maps.cpp:
+	extab       start:0x8000EE68 end:0x8000EFA0
+	extabindex  start:0x80032FB8 end:0x80033030
+	.text       start:0x800E8708 end:0x800E9BCC
+	.ctors      start:0x804620E8 end:0x804620EC
+
+game/golf/club_selection_and_shot_params.cpp:
+	extab       start:0x8000EFA0 end:0x8000F358
+	extabindex  start:0x80033030 end:0x80033168
+	.text       start:0x800E9BCC end:0x800EE8AC
+	.ctors      start:0x804620EC end:0x804620F0
+	.data       start:0x804AD654 end:0x804AD680
+	.bss        start:0x804F6710 end:0x804F67B0
+	.sbss       start:0x805DC770 end:0x805DC774
+	.sdata2     start:0x805DE050 end:0x805DE210
+
+game/fx/club_trail_and_ring_effects.cpp:
+	extab       start:0x8000F358 end:0x8000F3D4
+	extabindex  start:0x80033168 end:0x80033204
+	.text       start:0x800EE8AC end:0x800EFEAC
+	.ctors      start:0x804620F0 end:0x804620FC
+	.sdata2     start:0x805DE210 end:0x805DE260
+
+game/golf/spot_marker_actor.cpp:
+	extab       start:0x8000F3D4 end:0x8000F470
+	extabindex  start:0x80033204 end:0x8003324C
+	.text       start:0x800EFEAC end:0x800F0998
+
+game/golf/spot_marker_draw_and_messages.cpp:
+	extab       start:0x8000F470 end:0x8000F488
+	extabindex  start:0x8003324C end:0x80033270
+	.text       start:0x800F0998 end:0x800F1D9C
+	.sdata2     start:0x805DE2C8 end:0x805DE2D0
+
+game/ui/golf_hud_spot_markers_and_fonts.cpp:
+	extab       start:0x8000F488 end:0x8000F4D0
+	extabindex  start:0x80033270 end:0x800332C4
+	.text       start:0x800F1D9C end:0x800F30AC
+	.ctors      start:0x804620FC end:0x80462100
+
+game/ui/hud_distance_to_pin_and_cup_info.cpp:
+	extab       start:0x8000F4D0 end:0x8000F5F0
+	extabindex  start:0x800332C4 end:0x80033360
+	.text       start:0x800F30AC end:0x800F47F4
+
+game/ui/fly_info_hud.cpp:
+	extab       start:0x8000F5F0 end:0x8000F6CC
+	extabindex  start:0x80033360 end:0x80033390
+	.text       start:0x800F47F4 end:0x800F5500
+
+game/golf/golf_hud_flight_info_and_pang_rewards.cpp:
+	extab       start:0x8000F6CC end:0x8000FA54
+	extabindex  start:0x80033390 end:0x80033660
+	.text       start:0x800F5500 end:0x801005E4
+	.sdata2     start:0x805DE320 end:0x805DE530
+
+game/ui/golf_hud_hole_info_and_fonts.cpp:
+	extab       start:0x8000FA54 end:0x8000FB98
+	extabindex  start:0x80033660 end:0x8003372C
+	.text       start:0x801005E4 end:0x80101BD0
+	.ctors      start:0x80462100 end:0x80462104
+	.sdata2     start:0x805DE590 end:0x805DE598
+
+game/fx/pvs_fx_box_attachment_cache.cpp:
+	extab       start:0x8000FB98 end:0x8000FC20
+	extabindex  start:0x8003372C end:0x8003378C
+	.text       start:0x80101BD0 end:0x80102E18
+
+game/fx/cfx_shot_effects.cpp:
+	extab       start:0x8000FC20 end:0x8000FC68
+	extabindex  start:0x8003378C end:0x800337F8
+	.text       start:0x80102E18 end:0x80104570
+
+game/fx/fx_shot_effects_cobra_tomahawk.cpp:
+	extab       start:0x8000FC68 end:0x8000FD80
+	extabindex  start:0x800337F8 end:0x800338B8
+	.text       start:0x80104570 end:0x80105A48
+
+game/fx/fx_shot_effects_tomahawk_spike.cpp:
+	extab       start:0x8000FD80 end:0x8000FE3C
+	extabindex  start:0x800338B8 end:0x80033960
+	.text       start:0x80105A48 end:0x80107180
+
+game/fx/fx_box_effect_trees.cpp:
+	extab       start:0x8000FE3C end:0x8000FE98
+	extabindex  start:0x80033960 end:0x800339B4
+	.text       start:0x80107180 end:0x80108870
+	.ctors      start:0x80462104 end:0x80462108
+
+game/fx/fx_box_resource_caches.cpp:
+	extab       start:0x8000FE98 end:0x8000FED0
+	extabindex  start:0x800339B4 end:0x80033A08
+	.text       start:0x80108870 end:0x80109E1C
+
+game/fx/fx_box_spray_sequence_registry.cpp:
+	extab       start:0x8000FED0 end:0x8000FF88
+	extabindex  start:0x80033A08 end:0x80033A98
+	.text       start:0x80109E1C end:0x8010B244
+
+game/fx/fx_box_interpreter_resources.cpp:
+	extab       start:0x8000FF88 end:0x80010054
+	extabindex  start:0x80033A98 end:0x80033B10
+	.text       start:0x8010B244 end:0x8010C720
+	.ctors      start:0x80462108 end:0x8046210C
+
+game/fx/fx_sequence_scripts_and_attachments.cpp:
+	extab       start:0x80010054 end:0x80010138
+	extabindex  start:0x80033B10 end:0x80033B94
+	.text       start:0x8010C720 end:0x8010DCF0
+	.ctors      start:0x8046210C end:0x80462110
+
+game/fx/fx_sequence_script_parser.cpp:
+	extab       start:0x80010138 end:0x800101B8
+	extabindex  start:0x80033B94 end:0x80033BD0
+	.text       start:0x8010DCF0 end:0x8010F380
+	.sdata2     start:0x805DE630 end:0x805DE638
+
+game/fx/fx_particle_and_spray.cpp:
+	extab       start:0x800101B8 end:0x800102BC
+	extabindex  start:0x80033BD0 end:0x80033D08
+	.text       start:0x8010F380 end:0x80110A50
+	.ctors      start:0x80462110 end:0x80462114
+
+game/fx/fx_spray_list_and_loading.cpp:
+	extab       start:0x800102BC end:0x8001036C
+	extabindex  start:0x80033D08 end:0x80033D5C
+	.text       start:0x80110A50 end:0x80111E8C
+
+game/fx/fx_spray_config_assign.cpp:
+	extab       start:0x8001036C end:0x800103E0
+	extabindex  start:0x80033D5C end:0x80033D98
+	.text       start:0x80111E8C end:0x801134F0
+
+game/fx/fx_spray_track_list_assign_part1.cpp:
+	extab       start:0x800103E0 end:0x80010454
+	extabindex  start:0x80033D98 end:0x80033DBC
+	.text       start:0x801134F0 end:0x801146EC
+
+game/fx/fx_spray_track_list_assign_part2.cpp:
+	extab       start:0x80010454 end:0x800104A8
+	extabindex  start:0x80033DBC end:0x80033DE0
+	.text       start:0x801146EC end:0x80115838
+
+game/system/list_assign_templates.cpp:
+	extab       start:0x800104A8 end:0x8001051C
+	extabindex  start:0x80033DE0 end:0x80033E04
+	.text       start:0x80115838 end:0x801169F4
+
+game/system/string_and_name_map_utils.cpp:
+	extab       start:0x8001051C end:0x8001056C
+	extabindex  start:0x80033E04 end:0x80033E28
+	.text       start:0x801169F4 end:0x801177B4
+
+game/fx/fx_spray_script_parser.cpp:
+	extab       start:0x8001056C end:0x800105DC
+	extabindex  start:0x80033E28 end:0x80033E34
+	.text       start:0x801177B4 end:0x80119230
+
+game/fx/fx_spray_particles.cpp:
+	extab       start:0x800105DC end:0x80010694
+	extabindex  start:0x80033E34 end:0x80033EDC
+	.text       start:0x80119230 end:0x801203D4
+	.ctors      start:0x80462114 end:0x80462118
+	.sdata2     start:0x805DE650 end:0x805DE6C0
+
+game/golf/golf_ball_predata_and_gallery.cpp:
+	extab       start:0x80010694 end:0x8001073C
+	extabindex  start:0x80033EDC end:0x80033F3C
+	.text       start:0x801203D4 end:0x80121B14
+	.ctors      start:0x80462118 end:0x80462120
+
+game/golf/golf_bg_hole_resources.cpp:
+	extab       start:0x8001073C end:0x8001078C
+	extabindex  start:0x80033F3C end:0x80033F78
+	.text       start:0x80121B14 end:0x801228E8
+
+game/golf/course_entry_vectors_and_doc_accessors.cpp:
+	extab       start:0x8001078C end:0x80010994
+	extabindex  start:0x80033F78 end:0x80033FA8
+	.text       start:0x801228E8 end:0x80123CCC
+
+game/golf/golf_background_load.cpp:
+	extab       start:0x80010994 end:0x80010AD4
+	extabindex  start:0x80033FA8 end:0x80033FC0
+	.text       start:0x80123CCC end:0x8012484C
+
+game/golf/golf_bg_course_reload_and_camera.cpp:
+	extab       start:0x80010AD4 end:0x80010B14
+	extabindex  start:0x80033FC0 end:0x80034008
+	.text       start:0x8012484C end:0x80125CAC
+
+game/golf/golf_bg_course_paths_and_caddie.cpp:
+	extab       start:0x80010B14 end:0x80010BD0
+	extabindex  start:0x80034008 end:0x8003408C
+	.text       start:0x80125CAC end:0x801270B8
+	.ctors      start:0x80462120 end:0x80462124
+
+game/golf/golf_caddie_load_and_cleanup.cpp:
+	extab       start:0x80010BD0 end:0x80010C14
+	extabindex  start:0x8003408C end:0x800340D4
+	.text       start:0x801270B8 end:0x80128808
+
+game/golf/golf_caddie_dialogue_entries.cpp:
+	extab       start:0x80010C14 end:0x80010D98
+	extabindex  start:0x800340D4 end:0x80034134
+	.text       start:0x80128808 end:0x80129C6C
+
+game/golf/golf_caddie_animation_process.cpp:
+	extab       start:0x80010D98 end:0x80010E40
+	extabindex  start:0x80034134 end:0x80034170
+	.text       start:0x80129C6C end:0x8012B3C4
+
+game/golf/caddie_situational_commentary.cpp:
+	extab       start:0x80010E40 end:0x80010E48
+	extabindex  start:0x80034170 end:0x8003417C
+	.text       start:0x8012B3C4 end:0x8012C52C
+
+game/golf/golf_caddie_commentary_and_draw.cpp:
+	extab       start:0x80010E48 end:0x80011054
+	extabindex  start:0x8003417C end:0x800341A0
+	.text       start:0x8012C52C end:0x8012D504
+
+game/golf/golf_caddie_messages.cpp:
+	extab       start:0x80011054 end:0x8001105C
+	extabindex  start:0x800341A0 end:0x800341AC
+	.text       start:0x8012D504 end:0x8012F884
+
+game/chara/golf_caddie_model_and_reactions.cpp:
+	extab       start:0x8001105C end:0x800110E4
+	extabindex  start:0x800341AC end:0x8003420C
+	.text       start:0x8012F884 end:0x80130F58
+
+game/golf/golf_caddie_dialogue_strings.cpp:
+	extab       start:0x800110E4 end:0x8001127C
+	extabindex  start:0x8003420C end:0x8003429C
+	.text       start:0x80130F58 end:0x8013246C
+	.ctors      start:0x80462124 end:0x80462128
+
+game/golf/golf_doc_turns_and_parameter_xml.cpp:
+	extab       start:0x8001127C end:0x8001159C
+	extabindex  start:0x8003429C end:0x800343C8
+	.text       start:0x8013246C end:0x8013798C
+	.sdata2     start:0x805DE8D0 end:0x805DE928
+
+game/system/string_tree_and_vector_utils.cpp:
+	extab       start:0x8001159C end:0x800115E8
+	extabindex  start:0x800343C8 end:0x800343EC
+	.text       start:0x8013798C end:0x80138554
+
+game/golf/terrain_declaration_vector.cpp:
+	extab       start:0x800115E8 end:0x80011694
+	extabindex  start:0x800343EC end:0x80034404
+	.text       start:0x80138554 end:0x801398B0
+
+game/golf/golf_player_lifecycle.cpp:
+	extab       start:0x80011694 end:0x80011798
+	extabindex  start:0x80034404 end:0x800344AC
+	.text       start:0x801398B0 end:0x8013AE84
+	.ctors      start:0x80462128 end:0x8046212C
+
+game/golf/golf_player_actor.cpp:
+	extab       start:0x80011798 end:0x80011B88
+	extabindex  start:0x800344AC end:0x80034638
+	.text       start:0x8013AE84 end:0x801484F4
+	.sdata2     start:0x805DE998 end:0x805DE9A0
+
+game/chara/golf_player_animation_and_model_loads.cpp:
+	extab       start:0x80011B88 end:0x80011C18
+	extabindex  start:0x80034638 end:0x800346B0
+	.text       start:0x801484F4 end:0x80149BA8
+
+game/chara/golf_player_script_animation.cpp:
+	extab       start:0x80011C18 end:0x80011C70
+	extabindex  start:0x800346B0 end:0x80034734
+	.text       start:0x80149BA8 end:0x8014B0F4
+
+game/golf/golf_player_rtti_and_stub_hooks.cpp:
+	extab       start:0x80011C70 end:0x80011C78
+	extabindex  start:0x80034734 end:0x80034740
+	.text       start:0x8014B0F4 end:0x8014B210
+	.ctors      start:0x8046212C end:0x80462130
+
+game/golf/golf_rule_round_flow_and_shot_sim.cpp:
+	extab       start:0x80011C78 end:0x80012700
+	extabindex  start:0x80034740 end:0x80034C20
+	.text       start:0x8014B210 end:0x8016EC24
+	.ctors      start:0x80462130 end:0x80462134
+	.sdata2     start:0x805DEA28 end:0x805DEBF8
+
+game/golf/golf_task_lifecycle.cpp:
+	extab       start:0x80012700 end:0x80012920
+	extabindex  start:0x80034C20 end:0x80034C50
+	.text       start:0x8016EC24 end:0x80170224
+
+game/system/golf_task_loading_and_pause.cpp:
+	extab       start:0x80012920 end:0x80012A40
+	extabindex  start:0x80034C50 end:0x80034CB0
+	.text       start:0x80170224 end:0x801718A4
+
+game/golf/golf_grid_layout_and_task.cpp:
+	extab       start:0x80012A40 end:0x80012AF0
+	extabindex  start:0x80034CB0 end:0x80034D88
+	.text       start:0x801718A4 end:0x801752FC
+	.ctors      start:0x80462134 end:0x8046213C
+	.sdata2     start:0x805DEC28 end:0x805DEC30
+
+game/ui/screen_ball_preview.cpp:
+	extab       start:0x80012AF0 end:0x80012B48
+	extabindex  start:0x80034D88 end:0x80034DD0
+	.text       start:0x801752FC end:0x80176A10
+
+game/golf/ball_preview_and_guide_line.cpp:
+	extab       start:0x80012B48 end:0x80012BD8
+	extabindex  start:0x80034DD0 end:0x80034E78
+	.text       start:0x80176A10 end:0x80178178
+	.ctors      start:0x8046213C end:0x80462140
+
+game/golf/guide_line_trajectory.cpp:
+	extab       start:0x80012BD8 end:0x80012D38
+	extabindex  start:0x80034E78 end:0x80034EF0
+	.text       start:0x80178178 end:0x80179180
+	.ctors      start:0x80462140 end:0x80462144
+	.sdata2     start:0x805DED08 end:0x805DED10
+
+game/ui/ingame_hud_screen.cpp:
+	extab       start:0x80012D38 end:0x80012FF0
+	extabindex  start:0x80034EF0 end:0x80034FC8
+	.text       start:0x80179180 end:0x80183098
+	.sdata2     start:0x805DED60 end:0x805DED68
+
+game/ui/head_icon_and_aux_menu_ui.cpp:
+	extab       start:0x80012FF0 end:0x8001307C
+	extabindex  start:0x80034FC8 end:0x80035028
+	.text       start:0x80183098 end:0x80184750
+	.ctors      start:0x80462144 end:0x80462148
+
+game/ui/head_icon_and_help_notice.cpp:
+	extab       start:0x8001307C end:0x8001324C
+	extabindex  start:0x80035028 end:0x80035094
+	.text       start:0x80184750 end:0x80185E48
+	.ctors      start:0x80462148 end:0x8046214C
+	.sdata2     start:0x805DEEF8 end:0x805DEF00
+
+game/system/input_manager_and_notice_queue.cpp:
+	extab       start:0x8001324C end:0x8001331C
+	extabindex  start:0x80035094 end:0x80035118
+	.text       start:0x80185E48 end:0x8018747C
+	.ctors      start:0x8046214C end:0x80462150
+	.sdata2     start:0x805DEF48 end:0x805DEF50
+
+game/system/input_manager_and_item_manager_lifetime.cpp:
+	extab       start:0x8001331C end:0x80013480
+	extabindex  start:0x80035118 end:0x800351F0
+	.text       start:0x8018747C end:0x8018839C
+	.ctors      start:0x80462150 end:0x80462154
+
+game/system/item_inventory_iff_loading.cpp:
+	extab       start:0x80013480 end:0x800135CC
+	extabindex  start:0x800351F0 end:0x80035208
+	.text       start:0x8018839C end:0x801898A8
+
+game/golf/item_inventory_tables.cpp:
+	extab       start:0x800135CC end:0x800136F4
+	extabindex  start:0x80035208 end:0x80035220
+	.text       start:0x801898A8 end:0x8018AD5C
+
+game/save/iff_item_inventory_table_loaders.cpp:
+	extab       start:0x800136F4 end:0x800138B0
+	extabindex  start:0x80035220 end:0x80035244
+	.text       start:0x8018AD5C end:0x8018C1F8
+
+game/save/item_inventory_iff_table_readers.cpp:
+	extab       start:0x800138B0 end:0x80013A6C
+	extabindex  start:0x80035244 end:0x80035268
+	.text       start:0x8018C1F8 end:0x8018D65C
+
+game/chara/item_inventory_iff_tables.cpp:
+	extab       start:0x80013A6C end:0x80013C28
+	extabindex  start:0x80035268 end:0x8003528C
+	.text       start:0x8018D65C end:0x8018ED64
+
+game/chara/item_inventory_lookup.cpp:
+	extab       start:0x80013C28 end:0x80013CE0
+	extabindex  start:0x8003528C end:0x800353A0
+	.text       start:0x8018ED64 end:0x80190474
+
+game/ui/item_window_hud.cpp:
+	extab       start:0x80013CE0 end:0x80013E08
+	extabindex  start:0x800353A0 end:0x80035490
+	.text       start:0x80190474 end:0x80192C70
+	.ctors      start:0x80462154 end:0x80462158
+	.sdata2     start:0x805DEFA0 end:0x805DEFA8
+
+game/fx/sun_rays_lens_flare_effects.cpp:
+	extab       start:0x80013E08 end:0x80013ECC
+	extabindex  start:0x80035490 end:0x800354FC
+	.text       start:0x80192C70 end:0x80193E80
+	.ctors      start:0x80462158 end:0x80462160
+	.sdata2     start:0x805DEFF8 end:0x805DF000
+
+game/ui/golf_letter_overlays.cpp:
+	extab       start:0x80013ECC end:0x80013F54
+	extabindex  start:0x800354FC end:0x8003552C
+	.text       start:0x80193E80 end:0x80194F9C
+	.sdata2     start:0x805DF078 end:0x805DF080
+
+game/system/main_frame_letter_and_mouse_cursor.cpp:
+	extab       start:0x80013F54 end:0x80014024
+	extabindex  start:0x8003552C end:0x800355BC
+	.text       start:0x80194F9C end:0x8019631C
+	.ctors      start:0x80462160 end:0x80462168
+
+game/ui/mouse_cursor_hit_testing.cpp:
+	extab       start:0x80014024 end:0x80014074
+	extabindex  start:0x800355BC end:0x8003561C
+	.text       start:0x8019631C end:0x801979C4
+	.ctors      start:0x80462168 end:0x8046216C
+	.sdata2     start:0x805DF288 end:0x805DF290
+
+game/fx/npc_creatures_course_objects.cpp:
+	extab       start:0x80014074 end:0x800141D0
+	extabindex  start:0x8003561C end:0x80035664
+	.text       start:0x801979C4 end:0x80198D58
+
+game/chara/creature_puppet_loading.cpp:
+	extab       start:0x800141D0 end:0x80014330
+	extabindex  start:0x80035664 end:0x800356AC
+	.text       start:0x80198D58 end:0x80199DCC
+
+game/chara/creature_path_movement_and_draw.cpp:
+	extab       start:0x80014330 end:0x80014458
+	extabindex  start:0x800356AC end:0x800356DC
+	.text       start:0x80199DCC end:0x8019B4B0
+
+game/fx/course_creatures_flocks_and_flyers.cpp:
+	extab       start:0x80014458 end:0x80014DC8
+	extabindex  start:0x800356DC end:0x800359AC
+	.text       start:0x8019B4B0 end:0x801A3B4C
+	.sdata2     start:0x805DF298 end:0x805DF34C
+
+game/chara/npc_pola_ship_and_penguin.cpp:
+	extab       start:0x80014DC8 end:0x80014FA0
+	extabindex  start:0x800359AC end:0x80035A0C
+	.text       start:0x801A3B4C end:0x801A51D0
+
+game/chara/npc_pola_penguin.cpp:
+	extab       start:0x80014FA0 end:0x80015088
+	extabindex  start:0x80035A0C end:0x80035AA8
+	.text       start:0x801A51D0 end:0x801A6854
+
+game/chara/npc_creatures_and_spline.cpp:
+	extab       start:0x80015088 end:0x800150EC
+	extabindex  start:0x80035AA8 end:0x80035B20
+	.text       start:0x801A6854 end:0x801A7580
+	.ctors      start:0x8046216C end:0x80462170
+
+game/fx/creature_dtor_thunks_and_marker.cpp:
+	extab       start:0x800150EC end:0x80015244
+	extabindex  start:0x80035B20 end:0x80035B68
+	.text       start:0x801A7580 end:0x801A8C20
+	.ctors      start:0x80462170 end:0x80462174
+	.sdata2     start:0x805DF3B0 end:0x805DF3B8
+
+game/fx/particle_effect_pool.cpp:
+	extab       start:0x80015244 end:0x80015384
+	extabindex  start:0x80035B68 end:0x80035BBC
+	.text       start:0x801A8C20 end:0x801A97D0
+
+game/fx/particle_effect_emitters.cpp:
+	extab       start:0x80015384 end:0x80015618
+	extabindex  start:0x80035BBC end:0x80035C7C
+	.text       start:0x801A97D0 end:0x801AC5B0
+	.ctors      start:0x80462174 end:0x80462178
+	.sdata2     start:0x805DF3E0 end:0x805DF3E8
+
+game/fx/course_ball_shot_effects.cpp:
+	extab       start:0x80015618 end:0x80015B08
+	extabindex  start:0x80035C7C end:0x80036018
+	.text       start:0x801AC5B0 end:0x801B4F20
+	.ctors      start:0x80462178 end:0x8046217C
+	.sdata2     start:0x805DF410 end:0x805DF530
+
+game/chara/player_pet_model_resources.cpp:
+	extab       start:0x80015B08 end:0x80015D54
+	extabindex  start:0x80036018 end:0x80036090
+	.text       start:0x801B4F20 end:0x801B6670
+
+game/chara/avatar_part_puppet_outfit.cpp:
+	extab       start:0x80015D54 end:0x80015E74
+	extabindex  start:0x80036090 end:0x80036150
+	.text       start:0x801B6670 end:0x801B7D5C
+	.ctors      start:0x8046217C end:0x80462184
+
+game/fx/petal_silica_particles.cpp:
+	extab       start:0x80015E74 end:0x80015FB8
+	extabindex  start:0x80036150 end:0x800361EC
+	.text       start:0x801B7D5C end:0x801B9214
+	.ctors      start:0x80462184 end:0x80462188
+
+game/chara/pet_body_animation_and_movement.cpp:
+	extab       start:0x80015FB8 end:0x800160D8
+	extabindex  start:0x800361EC end:0x8003633C
+	.text       start:0x801B9214 end:0x801BBD68
+	.ctors      start:0x80462188 end:0x8046218C
+	.sdata2     start:0x805DF598 end:0x805DF66C
+
+game/golf/course_data_and_polysoup_cleanup.cpp:
+	extab       start:0x800160D8 end:0x80016128
+	extabindex  start:0x8003633C end:0x80036378
+	.text       start:0x801BBD68 end:0x801BD08C
+
+game/golf/course_model_scene_loader.cpp:
+	extab       start:0x80016128 end:0x800163DC
+	extabindex  start:0x80036378 end:0x800363C0
+	.text       start:0x801BD08C end:0x801BF838
+
+game/system/record_vector_and_state_utils.cpp:
+	extab       start:0x800163DC end:0x80016478
+	extabindex  start:0x800363C0 end:0x800363D8
+	.text       start:0x801BF838 end:0x801BFDC4
+
+game/golf/course_object_and_selection.cpp:
+	extab       start:0x80016478 end:0x800164E8
+	extabindex  start:0x800363D8 end:0x80036420
+	.text       start:0x801BFDC4 end:0x801C06BC
+
+game/golf/course_node_records_and_containers.cpp:
+	extab       start:0x800164E8 end:0x800167CC
+	extabindex  start:0x80036420 end:0x80036480
+	.text       start:0x801C06BC end:0x801C1AC0
+
+game/golf/course_model_name_registry.cpp:
+	extab       start:0x800167CC end:0x800169E4
+	extabindex  start:0x80036480 end:0x800364EC
+	.text       start:0x801C1AC0 end:0x801C3100
+
+game/golf/course_data_geometry_and_surfaces.cpp:
+	extab       start:0x800169E4 end:0x80016A98
+	extabindex  start:0x800364EC end:0x800365AC
+	.text       start:0x801C3100 end:0x801C482C
+
+game/golf/course_surface_sbin_loading.cpp:
+	extab       start:0x80016A98 end:0x80016B5C
+	extabindex  start:0x800365AC end:0x800365F4
+	.text       start:0x801C482C end:0x801C54BC
+
+game/golf/course_surface_triangle_mappings.cpp:
+	extab       start:0x80016B5C end:0x80016BD4
+	extabindex  start:0x800365F4 end:0x80036630
+	.text       start:0x801C54BC end:0x801C6B14
+	.sdata2     start:0x805DF6B0 end:0x805DF6B8
+
+game/fx/water_caustic_gene_tex3d.cpp:
+	extab       start:0x80016BD4 end:0x80016D54
+	extabindex  start:0x80036630 end:0x800366D8
+	.text       start:0x801C6B14 end:0x801C8124
+	.ctors      start:0x8046218C end:0x80462190
+
+game/fx/course_water_surface_rendering.cpp:
+	extab       start:0x80016D54 end:0x80016E44
+	extabindex  start:0x800366D8 end:0x80036744
+	.text       start:0x801C8124 end:0x801C9600
+
+game/system/project_base_and_grid_surface.cpp:
+	extab       start:0x80016E44 end:0x8001709C
+	extabindex  start:0x80036744 end:0x800367E0
+	.text       start:0x801C9600 end:0x801CAB90
+	.ctors      start:0x80462190 end:0x80462194
+	.sdata2     start:0x805DF710 end:0x805DF718
+
+game/system/project_g_app_and_devices.cpp:
+	extab       start:0x8001709C end:0x800171F8
+	extabindex  start:0x800367E0 end:0x80036870
+	.text       start:0x801CAB90 end:0x801CC2C0
+	.ctors      start:0x80462194 end:0x80462198
+
+game/golf/quadtree_terrain_collision.cpp:
+	extab       start:0x800171F8 end:0x800172DC
+	extabindex  start:0x80036870 end:0x800368C4
+	.text       start:0x801CC2C0 end:0x801CCCC0
+
+game/golf/course_collision_and_ball_physics.cpp:
+	extab       start:0x800172DC end:0x80017624
+	extabindex  start:0x800368C4 end:0x80036BA0
+	.text       start:0x801CCCC0 end:0x801DB98C
+	.data       start:0x804B0C10 end:0x804B0C70
+	.sdata2     start:0x805DF778 end:0x805DF7B0
+
+game/fx/rain_effect_and_random_table.cpp:
+	extab       start:0x80017624 end:0x800176CC
+	extabindex  start:0x80036BA0 end:0x80036C60
+	.text       start:0x801DB98C end:0x801DD078
+	.ctors      start:0x80462198 end:0x804621A4
+	.sdata2     start:0x805DF880 end:0x805DF888
+
+game/golf/com_shot_cpu_rival_ai.cpp:
+	extab       start:0x800176CC end:0x80017940
+	extabindex  start:0x80036C60 end:0x80036E34
+	.text       start:0x801DD078 end:0x801E356C
+	.ctors      start:0x804621A4 end:0x804621A8
+	.rodata     start:0x80470910 end:0x80470C30
+	.data       start:0x804B0E10 end:0x804B10E0
+	.sdata      start:0x805DAED8 end:0x805DAF78
+	.sdata2     start:0x805DF8A8 end:0x805DF9F0
+
+game/fx/river_lava_texture_layers.cpp:
+	extab       start:0x80017940 end:0x800179FC
+	extabindex  start:0x80036E34 end:0x80036E64
+	.text       start:0x801E356C end:0x801E4C08
+
+game/fx/river_lava_layout.cpp:
+	extab       start:0x800179FC end:0x80017AD0
+	extabindex  start:0x80036E64 end:0x80036EB8
+	.text       start:0x801E4C08 end:0x801E6024
+	.ctors      start:0x804621A8 end:0x804621AC
+
+game/fx/scene_manager_pools_and_render_lists.cpp:
+	extab       start:0x80017AD0 end:0x80017D10
+	extabindex  start:0x80036EB8 end:0x80036F78
+	.text       start:0x801E6024 end:0x801E7790
+
+game/fx/draw_scene_named_effect_list.cpp:
+	extab       start:0x80017D10 end:0x80017D88
+	extabindex  start:0x80036F78 end:0x80036FCC
+	.text       start:0x801E7790 end:0x801E8048
+
+game/golf/course_scene_render_and_geometry.cpp:
+	extab       start:0x80017D88 end:0x80018118
+	extabindex  start:0x80036FCC end:0x800370A4
+	.text       start:0x801E8048 end:0x801EC334
+	.ctors      start:0x804621AC end:0x804621B0
+	.sdata2     start:0x805DFA38 end:0x805DFA40
+
+game/golf/score_actor_and_generated_surfaces.cpp:
+	extab       start:0x80018118 end:0x80018280
+	extabindex  start:0x800370A4 end:0x80037110
+	.text       start:0x801EC334 end:0x801EDA60
+	.ctors      start:0x804621B0 end:0x804621B4
+
+game/fx/texture_capture_queue_and_mesh.cpp:
+	extab       start:0x80018280 end:0x8001839C
+	extabindex  start:0x80037110 end:0x800371E8
+	.text       start:0x801EDA60 end:0x801EEF2C
+	.ctors      start:0x804621B4 end:0x804621B8
+	.sdata2     start:0x805DFAA0 end:0x805DFAA8
+
+game/fx/shadow_manager.cpp:
+	extab       start:0x8001839C end:0x8001845C
+	extabindex  start:0x800371E8 end:0x80037260
+	.text       start:0x801EEF2C end:0x801F05C4
+
+game/fx/shadow_manager_capture.cpp:
+	extab       start:0x8001845C end:0x800184E8
+	extabindex  start:0x80037260 end:0x800372E4
+	.text       start:0x801F05C4 end:0x801F1A5C
+
+game/fx/shadow_model_cache_and_shared_doc.cpp:
+	extab       start:0x800184E8 end:0x80018768
+	extabindex  start:0x800372E4 end:0x80037338
+	.text       start:0x801F1A5C end:0x801F31C0
+	.ctors      start:0x804621B8 end:0x804621BC
+
+game/system/shared_doc_singleton.cpp:
+	extab       start:0x80018768 end:0x800187B8
+	extabindex  start:0x80037338 end:0x800373B0
+	.text       start:0x801F31C0 end:0x801F44A4
+	.sdata2     start:0x805DFAD8 end:0x805DFAE8
+
+game/save/shared_doc_player_state_and_course.cpp:
+	extab       start:0x800187B8 end:0x800187E0
+	extabindex  start:0x800373B0 end:0x800373EC
+	.text       start:0x801F44A4 end:0x801F5570
+	.ctors      start:0x804621BC end:0x804621C0
+
+game/fx/pvsfxbox_sky_and_wind_particles.cpp:
+	extab       start:0x800187E0 end:0x800189F8
+	extabindex  start:0x800373EC end:0x8003750C
+	.text       start:0x801F5570 end:0x801FA2D0
+	.ctors      start:0x804621C0 end:0x804621CC
+	.sdata2     start:0x805DFAE8 end:0x805DFB98
+
+game/fx/snow_weather_particles.cpp:
+	extab       start:0x800189F8 end:0x80018A3C
+	extabindex  start:0x8003750C end:0x80037554
+	.text       start:0x801FA2D0 end:0x801FB14C
+	.ctors      start:0x804621CC end:0x804621D0
+	.sdata2     start:0x805DFBB0 end:0x805DFBB8
+
+game/fx/tail_effect_spin_and_bubble.cpp:
+	extab       start:0x80018A3C end:0x80018C38
+	extabindex  start:0x80037554 end:0x80037638
+	.text       start:0x801FB14C end:0x801FDF50
+	.ctors      start:0x804621D0 end:0x804621DC
+	.sdata2     start:0x805DFC10 end:0x805DFC50
+
+game/system/task_actor_loading.cpp:
+	extab       start:0x80018C38 end:0x80018CB8
+	extabindex  start:0x80037638 end:0x80037674
+	.text       start:0x801FDF50 end:0x801FE884
+
+game/system/task_manager_and_actors.cpp:
+	extab       start:0x80018CB8 end:0x80018D68
+	extabindex  start:0x80037674 end:0x80037704
+	.text       start:0x801FE884 end:0x801FFA9C
+
+game/system/ctask_transition_command_queue.cpp:
+	extab       start:0x80018D68 end:0x80018DE8
+	extabindex  start:0x80037704 end:0x8003777C
+	.text       start:0x801FFA9C end:0x80200A14
+
+game/system/title_task_and_ring_buffer.cpp:
+	extab       start:0x80018DE8 end:0x80018ED8
+	extabindex  start:0x8003777C end:0x80037800
+	.text       start:0x80200A14 end:0x80201D04
+	.ctors      start:0x804621DC end:0x804621E0
+
+game/fx/ball_trajectory_effects.cpp:
+	extab       start:0x80018ED8 end:0x80019158
+	extabindex  start:0x80037800 end:0x80037980
+	.text       start:0x80201D04 end:0x80205FCC
+	.ctors      start:0x804621E0 end:0x804621E4
+	.sdata2     start:0x805DFCB8 end:0x805DFD38
+
+game/fx/skidmark_ball.cpp:
+	extab       start:0x80019158 end:0x800191B4
+	extabindex  start:0x80037980 end:0x800379EC
+	.text       start:0x80205FCC end:0x802076A4
+	.ctors      start:0x804621E4 end:0x804621E8
+
+game/modes/tutorial_mode_ctutorial.cpp:
+	extab       start:0x800191B4 end:0x80019224
+	extabindex  start:0x800379EC end:0x80037A34
+	.text       start:0x802076A4 end:0x80208B30
+
+game/modes/tutorial_commands_and_input.cpp:
+	extab       start:0x80019224 end:0x80019234
+	extabindex  start:0x80037A34 end:0x80037A4C
+	.text       start:0x80208B30 end:0x80209C3C
+
+game/modes/tutorial_command_queue.cpp:
+	extab       start:0x80019234 end:0x80019360
+	extabindex  start:0x80037A4C end:0x80037B60
+	.text       start:0x80209C3C end:0x8020FEF0
+	.ctors      start:0x804621E8 end:0x804621EC
+	.sdata2     start:0x805DFD98 end:0x805DFDA0
+
+game/fx/beach_wavelet_ground_strip.cpp:
+	extab       start:0x80019360 end:0x8001947C
+	extabindex  start:0x80037B60 end:0x80037B9C
+	.text       start:0x8020FEF0 end:0x80211250
+
+game/fx/wind_indicator_wavelet_cloud_overlay.cpp:
+	extab       start:0x8001947C end:0x80019628
+	extabindex  start:0x80037B9C end:0x80037C38
+	.text       start:0x80211250 end:0x80212950
+	.ctors      start:0x804621EC end:0x804621F4
+
+game/golf/wind_system.cpp:
+	extab       start:0x80019628 end:0x80019688
+	extabindex  start:0x80037C38 end:0x80037CC8
+	.text       start:0x80212950 end:0x80213768
+	.sdata2     start:0x805DFE20 end:0x805DFE40
+
+game/golf/wind_regions_and_vectors.cpp:
+	extab       start:0x80019688 end:0x8001973C
+	extabindex  start:0x80037CC8 end:0x80037D04
+	.text       start:0x80213768 end:0x80214D14
+	.ctors      start:0x804621F4 end:0x804621F8
+
+game/system/game_main_loop_and_startup.cpp:
+	extab       start:0x8001973C end:0x800199B8
+	extabindex  start:0x80037D04 end:0x80037DA0
+	.text       start:0x80214D14 end:0x80216460
+	.ctors      start:0x804621F8 end:0x804621FC
+	.sdata2     start:0x805DFE88 end:0x805DFE90
+
+game/modes/mode_task_factory_creators.cpp:
+	extab       start:0x800199B8 end:0x80019C48
+	extabindex  start:0x80037DA0 end:0x80037EF0
+	.text       start:0x80216460 end:0x80216D5C
+
+game/system/engine_startup_and_ani_sprite.cpp:
+	extab       start:0x80019C48 end:0x80019E4C
+	extabindex  start:0x80037EF0 end:0x80037F74
+	.text       start:0x80216D5C end:0x80219964
+	.ctors      start:0x804621FC end:0x80462200
+	.sdata2     start:0x805DFED8 end:0x805DFEE0
+
+game/ui/font_markup_text_rendering.cpp:
+	extab       start:0x80019E4C end:0x80019FB0
+	extabindex  start:0x80037F74 end:0x80037FD4
+	.text       start:0x80219964 end:0x8021B01C
+	.ctors      start:0x80462200 end:0x80462204
+
+game/ui/title_font_atlas_and_fixed_font.cpp:
+	extab       start:0x80019FB0 end:0x8001A104
+	extabindex  start:0x80037FD4 end:0x8003801C
+	.text       start:0x8021B01C end:0x8021C59C
+	.sdata2     start:0x805DFF08 end:0x805DFF10
+
+game/chara/pet_mesh_and_fixed_font.cpp:
+	extab       start:0x8001A104 end:0x8001A218
+	extabindex  start:0x8003801C end:0x800380AC
+	.text       start:0x8021C59C end:0x8021DA94
+	.ctors      start:0x80462204 end:0x8046220C
+
+engine/gtl/w3d_sprite_and_billboard.cpp:
+	extab       start:0x8001A218 end:0x8001A250
+	extabindex  start:0x800380AC end:0x80038100
+	.text       start:0x8021DA94 end:0x8021F0F4
+	.ctors      start:0x8046220C end:0x80462218
+	.sdata2     start:0x805DFF30 end:0x805DFF38
+
+game/modes/event_script_model_commands.cpp:
+	extab       start:0x8001A250 end:0x8001A504
+	extabindex  start:0x80038100 end:0x8003822C
+	.text       start:0x8021F0F4 end:0x80221980
+	.ctors      start:0x80462218 end:0x8046221C
+	.sdata2     start:0x805DFF58 end:0x805DFFC0
+
+game/system/event_fx_sound_and_pad_swing_accele.cpp:
+	extab       start:0x8001A504 end:0x8001A7A0
+	extabindex  start:0x8003822C end:0x8003846C
+	.text       start:0x80221980 end:0x80226C9C
+	.ctors      start:0x8046221C end:0x80462228
+	.sdata2     start:0x805DFFC0 end:0x805E0080
+
+game/golf/pad_swing_ctrl_motion.cpp:
+	extab       start:0x8001A7A0 end:0x8001A878
+	extabindex  start:0x8003846C end:0x80038580
+	.text       start:0x80226C9C end:0x802283AC
+	.ctors      start:0x80462228 end:0x8046222C
+	.sdata2     start:0x805E00B8 end:0x805E00C0
+
+game/golf/pad_swing_ctrl_and_com_think.cpp:
+	extab       start:0x8001A878 end:0x8001AAD0
+	extabindex  start:0x80038580 end:0x800387B4
+	.text       start:0x802283AC end:0x8022C490
+	.ctors      start:0x8046222C end:0x80462240
+	.sdata2     start:0x805E0110 end:0x805E01C0
+
+game/golf/com_think_ctrl_conditions.cpp:
+	extab       start:0x8001AAD0 end:0x8001ABB8
+	extabindex  start:0x800387B4 end:0x80038850
+	.text       start:0x8022C490 end:0x8022DBE4
+
+game/golf/com_think_ctrl_and_shot_pos.cpp:
+	extab       start:0x8001ABB8 end:0x8001ACD0
+	extabindex  start:0x80038850 end:0x800388D4
+	.text       start:0x8022DBE4 end:0x8022F108
+	.ctors      start:0x80462240 end:0x80462244
+
+game/golf/com_think_shot_pos_candidates.cpp:
+	extab       start:0x8001ACD0 end:0x8001AE38
+	extabindex  start:0x800388D4 end:0x80038910
+	.text       start:0x8022F108 end:0x802307FC
+
+game/ui/shop_product_set_items.cpp:
+	extab       start:0x8001AE38 end:0x8001AEFC
+	extabindex  start:0x80038910 end:0x80038994
+	.text       start:0x802307FC end:0x8023163C
+	.ctors      start:0x80462244 end:0x8046224C
+
+game/ui/shop_product_lists_part1.cpp:
+	extab       start:0x8001AEFC end:0x8001B05C
+	extabindex  start:0x80038994 end:0x80038A00
+	.text       start:0x8023163C end:0x80232BFC
+
+game/ui/shop_product_lists_part2.cpp:
+	extab       start:0x8001B05C end:0x8001B1C4
+	extabindex  start:0x80038A00 end:0x80038A78
+	.text       start:0x80232BFC end:0x80234124
+
+game/ui/shop_product_caddie_lists.cpp:
+	extab       start:0x8001B1C4 end:0x8001B32C
+	extabindex  start:0x80038A78 end:0x80038AF0
+	.text       start:0x80234124 end:0x802356DC
+
+game/ui/shop_product_records.cpp:
+	extab       start:0x8001B32C end:0x8001B494
+	extabindex  start:0x80038AF0 end:0x80038B68
+	.text       start:0x802356DC end:0x80236BF4
+
+game/ui/shop_product_ring_and_equip_lists.cpp:
+	extab       start:0x8001B494 end:0x8001B600
+	extabindex  start:0x80038B68 end:0x80038BC8
+	.text       start:0x80236BF4 end:0x80237E24
+	.ctors      start:0x8046224C end:0x80462250
+
+game/ui/shop_product_categories.cpp:
+	extab       start:0x8001B600 end:0x8001B744
+	extabindex  start:0x80038BC8 end:0x80038CC4
+	.text       start:0x80237E24 end:0x80238E9C
+	.ctors      start:0x80462250 end:0x8046226C
+
+game/fx/effect_fade_and_camera_script.cpp:
+	extab       start:0x8001B744 end:0x8001B90C
+	extabindex  start:0x80038CC4 end:0x80038D78
+	.text       start:0x80238E9C end:0x8023A378
+	.ctors      start:0x8046226C end:0x80462280
+
+game/system/vcg_motion_player_and_fade.cpp:
+	extab       start:0x8001B90C end:0x8001BCCC
+	extabindex  start:0x80038D78 end:0x80038EA4
+	.text       start:0x8023A378 end:0x8023DCA0
+	.ctors      start:0x80462280 end:0x8046228C
+	.sdata2     start:0x805E01F0 end:0x805E01F8
+
+game/system/fade_overlay_and_shared_file.cpp:
+	extab       start:0x8001BCCC end:0x8001BD6C
+	extabindex  start:0x80038EA4 end:0x80038F58
+	.text       start:0x8023DCA0 end:0x8023E86C
+	.ctors      start:0x8046228C end:0x8046229C
+	.sdata2     start:0x805E0220 end:0x805E0230
+
+game/system/shared_file_loading.cpp:
+	extab       start:0x8001BD6C end:0x8001BF5C
+	extabindex  start:0x80038F58 end:0x80038FF4
+	.text       start:0x8023E86C end:0x8023F8DC
+	.ctors      start:0x8046229C end:0x804622AC
+
+game/ui/event_face_and_mpbase1_menu.cpp:
+	extab       start:0x8001BF5C end:0x8001C158
+	extabindex  start:0x80038FF4 end:0x80039084
+	.text       start:0x8023F8DC end:0x80241CEC
+	.ctors      start:0x804622AC end:0x804622B8
+	.sdata2     start:0x805E0238 end:0x805E0240
+
+game/ui/chara_select_screen_part1.cpp:
+	extab       start:0x8001C158 end:0x8001C4BC
+	extabindex  start:0x80039084 end:0x800390CC
+	.text       start:0x80241CEC end:0x80243434
+
+game/ui/chara_select_screen_part2.cpp:
+	extab       start:0x8001C4BC end:0x8001C644
+	extabindex  start:0x800390CC end:0x80039120
+	.text       start:0x80243434 end:0x80244B74
+
+game/ui/chara_select_screen_part3.cpp:
+	extab       start:0x8001C644 end:0x8001C8D4
+	extabindex  start:0x80039120 end:0x80039150
+	.text       start:0x80244B74 end:0x80245F84
+
+game/chara/character_preview_avatars.cpp:
+	extab       start:0x8001C8D4 end:0x8001CA24
+	extabindex  start:0x80039150 end:0x8003921C
+	.text       start:0x80245F84 end:0x8024745C
+	.ctors      start:0x804622B8 end:0x804622BC
+
+game/modes/chara_num_select_and_training_main.cpp:
+	extab       start:0x8001CA24 end:0x8001CB64
+	extabindex  start:0x8003921C end:0x800392AC
+	.text       start:0x8024745C end:0x80248934
+	.ctors      start:0x804622BC end:0x804622C4
+	.sdata2     start:0x805E0298 end:0x805E02A0
+
+game/modes/training_and_single_main_tasks.cpp:
+	extab       start:0x8001CB64 end:0x8001CC98
+	extabindex  start:0x800392AC end:0x8003936C
+	.text       start:0x80248934 end:0x80249C48
+	.ctors      start:0x804622C4 end:0x804622D4
+
+game/chara/chara_entry_ctor_dtor.cpp:
+	extab       start:0x8001CC98 end:0x8001CD04
+	extabindex  start:0x8003936C end:0x80039390
+	.text       start:0x80249C48 end:0x8024A284
+
+game/modes/party_character_entry_menu.cpp:
+	extab       start:0x8001CD04 end:0x8001D008
+	extabindex  start:0x80039390 end:0x8003939C
+	.text       start:0x8024A284 end:0x8024BD08
+
+game/ui/chara_entry_screen_part1.cpp:
+	extab       start:0x8001D008 end:0x8001D3E8
+	extabindex  start:0x8003939C end:0x800393CC
+	.text       start:0x8024BD08 end:0x8024D468
+
+game/ui/chara_entry_screen_part2.cpp:
+	extab       start:0x8001D3E8 end:0x8001D5F0
+	extabindex  start:0x800393CC end:0x800393E4
+	.text       start:0x8024D468 end:0x8024EAD8
+
+game/chara/chara_entry_render_context.cpp:
+	extab       start:0x8001D5F0 end:0x8001D818
+	extabindex  start:0x800393E4 end:0x80039408
+	.text       start:0x8024EAD8 end:0x8024F60C
+
+game/golf/computer_player_random_and_stroke.cpp:
+	extab       start:0x8001D818 end:0x8001DAF8
+	extabindex  start:0x80039408 end:0x800394C8
+	.text       start:0x8024F60C end:0x80250D60
+	.ctors      start:0x804622D4 end:0x804622E0
+	.sdata2     start:0x805E02D0 end:0x805E02F0
+
+game/ui/font_num_draw_entries.cpp:
+	extab       start:0x8001DAF8 end:0x8001DBB8
+	extabindex  start:0x800394C8 end:0x80039540
+	.text       start:0x80250D60 end:0x80251FDC
+	.ctors      start:0x804622E0 end:0x804622E4
+
+game/ui/font_num_draw_text_table.cpp:
+	extab       start:0x8001DBB8 end:0x8001DEB4
+	extabindex  start:0x80039540 end:0x80039594
+	.text       start:0x80251FDC end:0x802534D8
+	.sdata2     start:0x805E0310 end:0x805E0318
+
+game/system/font_registry_and_round_setup_mixed.cpp:
+	extab       start:0x8001DEB4 end:0x8001E0C8
+	extabindex  start:0x80039594 end:0x8003960C
+	.text       start:0x802534D8 end:0x80254BD4
+	.ctors      start:0x804622E4 end:0x804622EC
+
+game/ui/in_game_dialog_and_snapshot_copy.cpp:
+	extab       start:0x8001E0C8 end:0x8001E1E0
+	extabindex  start:0x8003960C end:0x80039690
+	.text       start:0x80254BD4 end:0x802562A0
+	.ctors      start:0x804622EC end:0x804622F0
+
+game/ui/ingame_dialog_and_fade_dialog.cpp:
+	extab       start:0x8001E1E0 end:0x8001E410
+	extabindex  start:0x80039690 end:0x80039774
+	.text       start:0x802562A0 end:0x802579FC
+	.ctors      start:0x804622F0 end:0x804622F8
+
+game/ui/golf_tips_and_tutorial_dialogs.cpp:
+	extab       start:0x8001E410 end:0x8001E4B0
+	extabindex  start:0x80039774 end:0x80039864
+	.text       start:0x802579FC end:0x80259080
+	.ctors      start:0x804622F8 end:0x80462300
+
+game/modes/party_item_gameplay_hooks.cpp:
+	extab       start:0x8001E4B0 end:0x8001E620
+	extabindex  start:0x80039864 end:0x80039A2C
+	.text       start:0x80259080 end:0x8025BBD0
+	.sdata2     start:0x805E0398 end:0x805E03F0
+
+game/system/blocked_word_ring_buffer.cpp:
+	extab       start:0x8001E620 end:0x8001E6DC
+	extabindex  start:0x80039A2C end:0x80039A98
+	.text       start:0x8025BBD0 end:0x8025D2A4
+	.ctors      start:0x80462300 end:0x80462304
+
+game/audio/movie_audio_mixing_and_playback.cpp:
+	extab       start:0x8001E6DC end:0x8001E784
+	extabindex  start:0x80039A98 end:0x80039B94
+	.text       start:0x8025D2A4 end:0x8025E8F8
+	.ctors      start:0x80462304 end:0x80462308
+	.sdata2     start:0x805E0410 end:0x805E0418
+
+game/chara/bone_controller_registry.cpp:
+	extab       start:0x8001E784 end:0x8001E7A4
+	extabindex  start:0x80039B94 end:0x80039BC4
+	.text       start:0x8025E8F8 end:0x8025F0BC
+
+game/chara/bone_controller_map_registry.cpp:
+	extab       start:0x8001E7A4 end:0x8001E808
+	extabindex  start:0x80039BC4 end:0x80039C0C
+	.text       start:0x8025F0BC end:0x8025F9F0
+	.ctors      start:0x80462308 end:0x8046230C
+
+engine/gtl/render_colored_quad_and_transform.cpp:
+	extab       start:0x8001E808 end:0x8001E830
+	extabindex  start:0x80039C0C end:0x80039C48
+	.text       start:0x8025F9F0 end:0x8025FDB8
+	.ctors      start:0x8046230C end:0x80462314
+
+game/fx/trail_ribbon_pointer.cpp:
+	extab       start:0x8001E830 end:0x8001E858
+	extabindex  start:0x80039C48 end:0x80039C84
+	.text       start:0x8025FDB8 end:0x80260838
+	.sdata2     start:0x805E0448 end:0x805E0450
+
+game/fx/trail_ribbon_build.cpp:
+	extab       start:0x8001E858 end:0x8001E860
+	extabindex  start:0x80039C84 end:0x80039C90
+	.text       start:0x80260838 end:0x802618B8
+
+game/ui/retry_menu.cpp:
+	extab       start:0x8001E860 end:0x8001E8BC
+	extabindex  start:0x80039C90 end:0x80039CC0
+	.text       start:0x802618B8 end:0x80261D30
+	.ctors      start:0x80462314 end:0x8046231C
+
+game/ui/retry_menu_and_render_packet.cpp:
+	extab       start:0x8001E8BC end:0x8001E9DC
+	extabindex  start:0x80039CC0 end:0x80039D14
+	.text       start:0x80261D30 end:0x80262614
+	.ctors      start:0x8046231C end:0x80462320
+
+engine/gtl/render_packet_vertex_buffers.cpp:
+	extab       start:0x8001E9DC end:0x8001EC9C
+	extabindex  start:0x80039D14 end:0x80039D8C
+	.text       start:0x80262614 end:0x80264238
+
+engine/gtl/engine_render_state_restore_dtors.cpp:
+	extab       start:0x8001EC9C end:0x8001ECD4
+	extabindex  start:0x80039D8C end:0x80039DE0
+	.text       start:0x80264238 end:0x8026456C
+
+game/ui/ingame_tutorial_dialog.cpp:
+	extab       start:0x8001ECD4 end:0x8001EDEC
+	extabindex  start:0x80039DE0 end:0x80039EB8
+	.text       start:0x8026456C end:0x80265514
+	.ctors      start:0x80462320 end:0x80462328
+
+game/golf/golf_cup_preview_capture.cpp:
+	extab       start:0x8001EDEC end:0x8001EF68
+	extabindex  start:0x80039EB8 end:0x80039F30
+	.text       start:0x80265514 end:0x8026700C
+
+game/system/pad_sample_history_buffer.cpp:
+	extab       start:0x8001EF68 end:0x8001F0DC
+	extabindex  start:0x80039F30 end:0x80039F48
+	.text       start:0x8026700C end:0x80267C20
+	.ctors      start:0x80462328 end:0x8046232C
+
+game/system/pad_motion_history.cpp:
+	extab       start:0x8001F0DC end:0x8001F12C
+	extabindex  start:0x80039F48 end:0x80039F9C
+	.text       start:0x80267C20 end:0x80268730
+
+game/chara/async_exhibition_and_pet_format.cpp:
+	extab       start:0x8001F12C end:0x8001F24C
+	extabindex  start:0x80039F9C end:0x8003A068
+	.text       start:0x80268730 end:0x80269E68
+	.ctors      start:0x8046232C end:0x8046233C
+
+game/chara/async_exhibition_avatar_preview.cpp:
+	extab       start:0x8001F24C end:0x8001F364
+	extabindex  start:0x8003A068 end:0x8003A170
+	.text       start:0x80269E68 end:0x8026B004
+	.ctors      start:0x8046233C end:0x80462344
+
+game/ui/warning_logo_screens.cpp:
+	extab       start:0x8001F364 end:0x8001F400
+	extabindex  start:0x8003A170 end:0x8003A1F4
+	.text       start:0x8026B004 end:0x8026C714
+	.ctors      start:0x80462344 end:0x8046234C
+
+game/chara/preload_avatar_wpuppet_async.cpp:
+	extab       start:0x8001F400 end:0x8001F5C0
+	extabindex  start:0x8003A1F4 end:0x8003A26C
+	.text       start:0x8026C714 end:0x8026D98C
+	.ctors      start:0x8046234C end:0x80462350
+
+game/chara/preload_avatar_async_queue.cpp:
+	extab       start:0x8001F5C0 end:0x8001F7A0
+	extabindex  start:0x8003A26C end:0x8003A290
+	.text       start:0x8026D98C end:0x8026E834
+
+game/system/preload_file_parts_async_loaders.cpp:
+	extab       start:0x8001F7A0 end:0x8001FA30
+	extabindex  start:0x8003A290 end:0x8003A32C
+	.text       start:0x8026E834 end:0x8026FEF0
+	.ctors      start:0x80462350 end:0x80462360
+
+game/system/preload_seq_spr_async.cpp:
+	extab       start:0x8001FA30 end:0x8001FAD0
+	extabindex  start:0x8003A32C end:0x8003A3D4
+	.text       start:0x8026FEF0 end:0x80270828
+	.ctors      start:0x80462360 end:0x80462370
+
+game/chara/preload_wpuppet.cpp:
+	extab       start:0x8001FAD0 end:0x8001FC98
+	extabindex  start:0x8003A3D4 end:0x8003A434
+	.text       start:0x80270828 end:0x80271734
+
+game/system/preload_file_and_sequence.cpp:
+	extab       start:0x8001FC98 end:0x8001FEFC
+	extabindex  start:0x8003A434 end:0x8003A4D0
+	.text       start:0x80271734 end:0x80272E70
+	.ctors      start:0x80462370 end:0x8046237C
+
+game/save/pad_memory_menu_save.cpp:
+	extab       start:0x8001FEFC end:0x800200B4
+	extabindex  start:0x8003A4D0 end:0x8003A59C
+	.text       start:0x80272E70 end:0x802744E4
+	.ctors      start:0x8046237C end:0x80462388
+
+game/save/pad_memory_menu_load.cpp:
+	extab       start:0x800200B4 end:0x8002014C
+	extabindex  start:0x8003A59C end:0x8003A638
+	.text       start:0x802744E4 end:0x80275074
+	.ctors      start:0x80462388 end:0x80462390
+
+game/save/file_io_pad_and_flash_io.cpp:
+	extab       start:0x8002014C end:0x800201C4
+	extabindex  start:0x8003A638 end:0x8003A6A4
+	.text       start:0x80275074 end:0x80275A14
+	.ctors      start:0x80462390 end:0x80462394
+
+engine/gtl/cfileio_flash_file_operations.cpp:
+	extab       start:0x800201C4 end:0x80020264
+	extabindex  start:0x8003A6A4 end:0x8003A704
+	.text       start:0x80275A14 end:0x8027624C
+
+game/save/file_io_access_read_write.cpp:
+	extab       start:0x80020264 end:0x800202E4
+	extabindex  start:0x8003A704 end:0x8003A7AC
+	.text       start:0x8027624C end:0x80276AEC
+	.ctors      start:0x80462394 end:0x804623A4
+
+engine/gtl/file_io_flash_and_write_access.cpp:
+	extab       start:0x800202E4 end:0x800203D4
+	extabindex  start:0x8003A7AC end:0x8003A8B4
+	.text       start:0x80276AEC end:0x80277528
+	.ctors      start:0x804623A4 end:0x804623B0
+
+game/fx/draw_drive_line.cpp:
+	extab       start:0x800203D4 end:0x80020404
+	extabindex  start:0x8003A8B4 end:0x8003A8CC
+	.text       start:0x80277528 end:0x8027775C
+	.ctors      start:0x804623B0 end:0x804623B4
+
+game/golf/drive_line_shot_prediction.cpp:
+	extab       start:0x80020404 end:0x80020444
+	extabindex  start:0x8003A8CC end:0x8003A92C
+	.text       start:0x8027775C end:0x802789A8
+	.sdata2     start:0x805E0550 end:0x805E0558
+
+game/chara/pet_preload_async.cpp:
+	extab       start:0x80020444 end:0x800205F4
+	extabindex  start:0x8003A92C end:0x8003AA04
+	.text       start:0x802789A8 end:0x80279C64
+	.ctors      start:0x804623B4 end:0x804623C0
+
+game/ui/common_dialog_yes_no.cpp:
+	extab       start:0x800205F4 end:0x800206A8
+	extabindex  start:0x8003AA04 end:0x8003AA88
+	.text       start:0x80279C64 end:0x8027B374
+	.sdata2     start:0x805E05B0 end:0x805E05B8
+
+game/save/flash_memory_menu_save.cpp:
+	extab       start:0x800206A8 end:0x80020758
+	extabindex  start:0x8003AA88 end:0x8003AB78
+	.text       start:0x8027B374 end:0x8027CAA8
+	.ctors      start:0x804623C0 end:0x804623C8
+
+game/save/flash_memory_menu_load_part1.cpp:
+	extab       start:0x80020758 end:0x80020834
+	extabindex  start:0x8003AB78 end:0x8003ABD8
+	.text       start:0x8027CAA8 end:0x8027D564
+	.ctors      start:0x804623C8 end:0x804623CC
+
+game/save/flash_memory_menu_load_part2.cpp:
+	extab       start:0x80020834 end:0x8002088C
+	extabindex  start:0x8003ABD8 end:0x8003ABFC
+	.text       start:0x8027D564 end:0x8027EB68
+	.ctors      start:0x804623CC end:0x804623D0
+
+game/save/file_io_menu_save_load_base.cpp:
+	extab       start:0x8002088C end:0x80020984
+	extabindex  start:0x8003ABFC end:0x8003AD28
+	.text       start:0x8027EB68 end:0x80280150
+
+game/save/save_form_records_and_flash_io.cpp:
+	extab       start:0x80020984 end:0x80020A44
+	extabindex  start:0x8003AD28 end:0x8003ADE8
+	.text       start:0x80280150 end:0x80280D18
+	.ctors      start:0x804623D0 end:0x804623E4
+
+game/save/save_process_main_task.cpp:
+	extab       start:0x80020A44 end:0x80020AB0
+	extabindex  start:0x8003ADE8 end:0x8003AE54
+	.text       start:0x80280D18 end:0x802813D0
+	.ctors      start:0x804623E4 end:0x804623F0
+
+game/system/check_drive_status_dialog.cpp:
+	extab       start:0x80020AB0 end:0x80020BD0
+	extabindex  start:0x8003AE54 end:0x8003AEE4
+	.text       start:0x802813D0 end:0x80283608
+
+game/modes/party_main_and_versus_main.cpp:
+	extab       start:0x80020BD0 end:0x80020CE8
+	extabindex  start:0x8003AEE4 end:0x8003AF5C
+	.text       start:0x80283608 end:0x80284D14
+	.ctors      start:0x804623F0 end:0x804623F8
+
+game/modes/party_main_render_context.cpp:
+	extab       start:0x80020CE8 end:0x80020ED8
+	extabindex  start:0x8003AF5C end:0x8003AF98
+	.text       start:0x80284D14 end:0x802861B0
+	.ctors      start:0x804623F8 end:0x804623FC
+
+game/ui/pop_item_dialog_and_loading_draw.cpp:
+	extab       start:0x80020ED8 end:0x80021028
+	extabindex  start:0x8003AF98 end:0x8003B028
+	.text       start:0x802861B0 end:0x802877E8
+	.ctors      start:0x804623FC end:0x80462408
+
+game/ui/loading_draw_tips_and_background.cpp:
+	extab       start:0x80021028 end:0x800210C8
+	extabindex  start:0x8003B028 end:0x8003B094
+	.text       start:0x802877E8 end:0x80288F50
+	.ctors      start:0x80462408 end:0x8046240C
+	.sdata2     start:0x805E0600 end:0x805E0620
+
+game/ui/small_common_dialog.cpp:
+	extab       start:0x800210C8 end:0x800211D4
+	extabindex  start:0x8003B094 end:0x8003B184
+	.text       start:0x80288F50 end:0x8028A588
+	.ctors      start:0x8046240C end:0x80462418
+	.sdata2     start:0x805E0620 end:0x805E0640
+
+game/system/home_button_menu.cpp:
+	extab       start:0x800211D4 end:0x80021224
+	extabindex  start:0x8003B184 end:0x8003B1FC
+	.text       start:0x8028A588 end:0x8028BC74
+	.ctors      start:0x80462418 end:0x80462420
+
+game/system/shared_file_registry.cpp:
+	extab       start:0x80021224 end:0x80021440
+	extabindex  start:0x8003B1FC end:0x8003B238
+	.text       start:0x8028BC74 end:0x8028CB84
+	.ctors      start:0x80462420 end:0x80462424
+
+sdk/des_crypt_and_angle_period_init.cpp:
+	extab       start:0x80021440 end:0x80021450
+	extabindex  start:0x8003B238 end:0x8003B250
+	.text       start:0x8028CB84 end:0x8028DFB0
+	.ctors      start:0x80462424 end:0x8046242C
+
+game/system/password_des_base64_texture_preload.cpp:
+	extab       start:0x80021450 end:0x80021590
+	extabindex  start:0x8003B250 end:0x8003B310
+	.text       start:0x8028DFB0 end:0x8028F4D0
+	.ctors      start:0x8046242C end:0x80462444
+
+game/system/pack_texture_resource_loading.cpp:
+	extab       start:0x80021590 end:0x800215F4
+	extabindex  start:0x8003B310 end:0x8003B364
+	.text       start:0x8028F4D0 end:0x8028FE2C
+	.ctors      start:0x80462444 end:0x8046244C
+
+game/ui/loading_screen_b2d_player.cpp:
+	extab       start:0x800215F4 end:0x80021AC4
+	extabindex  start:0x8003B364 end:0x8003B424
+	.text       start:0x8028FE2C end:0x80293248
+	.sdata2     start:0x805E0680 end:0x805E0688
+
+game/system/system_reset_and_callbacks.cpp:
+	extab       start:0x80021AC4 end:0x80021B14
+	extabindex  start:0x8003B424 end:0x8003B49C
+	.text       start:0x80293248 end:0x80293A54
+	.ctors      start:0x8046244C end:0x8046245C
+
+game/ui/movie_controller_and_banner.cpp:
+	extab       start:0x80021B14 end:0x80021B94
+	extabindex  start:0x8003B49C end:0x8003B520
+	.text       start:0x80293A54 end:0x80294D44
+	.ctors      start:0x8046245C end:0x80462464
+
+game/save/save_banner_image_setup.cpp:
+	extab       start:0x80021B94 end:0x80021BC4
+	extabindex  start:0x8003B520 end:0x8003B52C
+	.text       start:0x80294D44 end:0x8029523C
+
+game/save/save_banner_text_sections.cpp:
+	extab       start:0x80021BC4 end:0x80021E1C
+	extabindex  start:0x8003B52C end:0x8003B5A4
+	.text       start:0x8029523C end:0x80297160
+
+game/system/wstring_array_utils.cpp:
+	extab       start:0x80021E1C end:0x80021E34
+	extabindex  start:0x8003B5A4 end:0x8003B5C8
+	.text       start:0x80297160 end:0x8029736C
+
+game/ui/player_info_screen.cpp:
+	extab       start:0x80021E34 end:0x80021FC0
+	extabindex  start:0x8003B5C8 end:0x8003B64C
+	.text       start:0x8029736C end:0x8029B6B0
+	.ctors      start:0x80462464 end:0x8046246C
+	.sdata2     start:0x805E06C8 end:0x805E06E0
+
+game/golf/unplayable_ball_drop_sequence.cpp:
+	extab       start:0x80021FC0 end:0x80022050
+	extabindex  start:0x8003B64C end:0x8003B724
+	.text       start:0x8029B6B0 end:0x8029BFC0
+	.ctors      start:0x8046246C end:0x80462484
+
+game/system/packed_file_loader_and_exhibition_pos.cpp:
+	extab       start:0x80022050 end:0x80022214
+	extabindex  start:0x8003B724 end:0x8003B7A8
+	.text       start:0x8029BFC0 end:0x8029D128
+	.ctors      start:0x80462484 end:0x80462490
+
+game/system/md5_and_disk_error_dialog.cpp:
+	extab       start:0x80022214 end:0x800222EC
+	extabindex  start:0x8003B7A8 end:0x8003B82C
+	.text       start:0x8029D128 end:0x8029E894
+	.ctors      start:0x80462490 end:0x804624A0
+	.sdata2     start:0x805E0700 end:0x805E0708
+
+game/ui/chat_msg_interface.cpp:
+	extab       start:0x800222EC end:0x80022308
+	extabindex  start:0x8003B82C end:0x8003B838
+	.text       start:0x8029E894 end:0x8029E8FC
+
+game/ui/chatmsg_singleton_teardown.cpp:
+	extab       start:0x80022308 end:0x80022318
+	extabindex  start:0x8003B838 end:0x8003B850
+	.text       start:0x8029E8FC end:0x8029E9FC
+
+game/system/actor_factory_registry.cpp:
+	extab       start:0x80022318 end:0x80022338
+	extabindex  start:0x8003B850 end:0x8003B880
+	.text       start:0x8029E9FC end:0x8029F418
+	.ctors      start:0x804624A0 end:0x804624A4
+
+game/system/string_map_tree_utils.cpp:
+	extab       start:0x80022338 end:0x80022380
+	extabindex  start:0x8003B880 end:0x8003B8B0
+	.text       start:0x8029F418 end:0x8029FAC4
+
+game/system/direct_input_device_factory.cpp:
+	extab       start:0x80022380 end:0x80022430
+	extabindex  start:0x8003B8B0 end:0x8003B904
+	.text       start:0x8029FAC4 end:0x802A035C
+	.ctors      start:0x804624A4 end:0x804624AC
+
+game/system/directinput_keyboard_adapter.cpp:
+	extab       start:0x80022430 end:0x80022448
+	extabindex  start:0x8003B904 end:0x8003B928
+	.text       start:0x802A035C end:0x802A0698
+
+game/system/directinput_mouse_keyboard.cpp:
+	extab       start:0x80022448 end:0x80022498
+	extabindex  start:0x8003B928 end:0x8003B970
+	.text       start:0x802A0698 end:0x802A0FF0
+	.ctors      start:0x804624AC end:0x804624B4
+
+game/system/tinyxml_parser.cpp:
+	extab       start:0x80022498 end:0x800225BC
+	extabindex  start:0x8003B970 end:0x8003BA18
+	.text       start:0x802A0FF0 end:0x802A3004
+
+game/system/tinyxml_node_element_string.cpp:
+	extab       start:0x800225BC end:0x80022714
+	extabindex  start:0x8003BA18 end:0x8003BAFC
+	.text       start:0x802A3004 end:0x802A45E4
+	.ctors      start:0x804624B4 end:0x804624BC
+
+game/system/tinyxml_print_and_clone.cpp:
+	extab       start:0x80022714 end:0x80022934
+	extabindex  start:0x8003BAFC end:0x8003BC04
+	.text       start:0x802A45E4 end:0x802A5CC4
+
+game/chara/actor_animation_commands_and_attachments.cpp:
+	extab       start:0x80022934 end:0x800229C4
+	extabindex  start:0x8003BC04 end:0x8003BCA0
+	.text       start:0x802A5CC4 end:0x802A6E98
+	.ctors      start:0x804624BC end:0x804624C8
+	.sdata2     start:0x805E07C8 end:0x805E07D0
+
+game/audio/sound_playback_state_slots.cpp:
+	extab       start:0x800229C4 end:0x80022B78
+	extabindex  start:0x8003BCA0 end:0x8003BCD0
+	.text       start:0x802A6E98 end:0x802A83F4
+
+game/audio/sound_channel_group_reset.cpp:
+	extab       start:0x80022B78 end:0x80022B80
+	extabindex  start:0x8003BCD0 end:0x8003BCDC
+	.text       start:0x802A83F4 end:0x802A8798
+
+game/audio/sound_manager.cpp:
+	extab       start:0x80022B80 end:0x80023184
+	extabindex  start:0x8003BCDC end:0x8003BF34
+	.text       start:0x802A8798 end:0x802B4360
+	.sdata2     start:0x805E07E8 end:0x805E07F0
+
+game/ui/exhibition_model_preview.cpp:
+	extab       start:0x80023184 end:0x800235BC
+	extabindex  start:0x8003BF34 end:0x8003C0C0
+	.text       start:0x802B4360 end:0x802BAAD0
+	.ctors      start:0x804624C8 end:0x804624CC
+	.sdata2     start:0x805E0888 end:0x805E0898
+
+game/golf/club_custom_table.cpp:
+	extab       start:0x800235BC end:0x800235DC
+	extabindex  start:0x8003C0C0 end:0x8003C0D8
+	.text       start:0x802BAAD0 end:0x802BACA4
+	.ctors      start:0x804624CC end:0x804624D4
+
+game/golf/club_customization_table_lookup.cpp:
+	extab       start:0x800235DC end:0x800235FC
+	extabindex  start:0x8003C0D8 end:0x8003C0F0
+	.text       start:0x802BACA4 end:0x802BADE4
+
+game/ui/title_top_and_multiplay_menu.cpp:
+	extab       start:0x800235FC end:0x80023728
+	extabindex  start:0x8003C0F0 end:0x8003C174
+	.text       start:0x802BADE4 end:0x802BC3F8
+	.ctors      start:0x804624D4 end:0x804624DC
+
+game/ui/top_submenu_and_multiplay_menu.cpp:
+	extab       start:0x80023728 end:0x80023814
+	extabindex  start:0x8003C174 end:0x8003C228
+	.text       start:0x802BC3F8 end:0x802BD994
+	.ctors      start:0x804624DC end:0x804624E4
+
+game/ui/title_main_and_top_menu.cpp:
+	extab       start:0x80023814 end:0x800239B8
+	extabindex  start:0x8003C228 end:0x8003C27C
+	.text       start:0x802BD994 end:0x802BEFE0
+	.ctors      start:0x804624E4 end:0x804624E8
+
+game/ui/shop_products_tab_and_top_menu.cpp:
+	extab       start:0x800239B8 end:0x80024070
+	extabindex  start:0x8003C27C end:0x8003C408
+	.text       start:0x802BEFE0 end:0x802C3258
+	.ctors      start:0x804624E8 end:0x804624F0
+	.sdata2     start:0x805E08F0 end:0x805E0918
+
+game/ui/pangya2_shop_screen.cpp:
+	extab       start:0x80024070 end:0x80024098
+	extabindex  start:0x8003C408 end:0x8003C444
+	.text       start:0x802C3258 end:0x802C470C
+
+game/ui/clubhouse_shop_screen.cpp:
+	extab       start:0x80024098 end:0x80024100
+	extabindex  start:0x8003C444 end:0x8003C4A4
+	.text       start:0x802C470C end:0x802C5C60
+
+game/ui/pangya2_shop_product_screen.cpp:
+	extab       start:0x80024100 end:0x80024158
+	extabindex  start:0x8003C4A4 end:0x8003C510
+	.text       start:0x802C5C60 end:0x802C7308
+
+game/ui/shop_product_selection_and_purchase.cpp:
+	extab       start:0x80024158 end:0x800241BC
+	extabindex  start:0x8003C510 end:0x8003C570
+	.text       start:0x802C7308 end:0x802C874C
+
+game/ui/pangya2_shop_purchase.cpp:
+	extab       start:0x800241BC end:0x800243F0
+	extabindex  start:0x8003C570 end:0x8003C5B8
+	.text       start:0x802C874C end:0x802C9D94
+
+game/ui/pangya2_shop_item_selection.cpp:
+	extab       start:0x800243F0 end:0x80024584
+	extabindex  start:0x8003C5B8 end:0x8003C5D0
+	.text       start:0x802C9D94 end:0x802CAA54
+
+game/ui/shop_outfit_unowned_markers.cpp:
+	extab       start:0x80024584 end:0x80024854
+	extabindex  start:0x8003C5D0 end:0x8003C5E8
+	.text       start:0x802CAA54 end:0x802CBF2C
+
+game/ui/shop_screen_selection_and_ownership.cpp:
+	extab       start:0x80024854 end:0x80024920
+	extabindex  start:0x8003C5E8 end:0x8003C678
+	.text       start:0x802CBF2C end:0x802CD608
+	.ctors      start:0x804624F0 end:0x804624F4
+
+game/ui/top_menu_base_and_menu_message.cpp:
+	extab       start:0x80024920 end:0x80024A6C
+	extabindex  start:0x8003C678 end:0x8003C798
+	.text       start:0x802CD608 end:0x802CE7B8
+	.ctors      start:0x804624F4 end:0x804624FC
+
+sdk/zlib_inflate_codes.cpp:
+	extab       start:0x80024A6C end:0x80024A74
+	extabindex  start:0x8003C798 end:0x8003C7A4
+	.text       start:0x802CE7B8 end:0x802CF0B4
+
+sdk/zlib_inflate_blocks.cpp:
+	extab       start:0x80024A74 end:0x80024A8C
+	extabindex  start:0x8003C7A4 end:0x8003C7C8
+	.text       start:0x802CF0B4 end:0x802D0648
+
+sdk/zlib_inflate_and_checksums.cpp:
+	extab       start:0x80024A8C end:0x80024AC4
+	extabindex  start:0x8003C7C8 end:0x8003C81C
+	.text       start:0x802D0648 end:0x802D1CE4
+
+game/system/zip_archive_directory_search.cpp:
+	extab       start:0x80024AC4 end:0x80024AD4
+	extabindex  start:0x8003C81C end:0x8003C834
+	.text       start:0x802D1CE4 end:0x802D2714
+
+engine/gtl/zip_central_directory_reader.cpp:
+	extab       start:0x80024AD4 end:0x80024ADC
+	extabindex  start:0x8003C834 end:0x8003C840
+	.text       start:0x802D2714 end:0x802D36D4
+
+game/system/zip_archive_reader.cpp:
+	extab       start:0x80024ADC end:0x80024B04
+	extabindex  start:0x8003C840 end:0x8003C87C
+	.text       start:0x802D36D4 end:0x802D4A1C
+
+game/system/archive_zip_reader_and_game_hooks.cpp:
+	extab       start:0x80024B04 end:0x80024BA0
+	extabindex  start:0x8003C87C end:0x8003C930
+	.text       start:0x802D4A1C end:0x802D5D78
+	.ctors      start:0x804624FC end:0x8046250C
+
+game/ui/shop_product_list_builder.cpp:
+	extab       start:0x80024BA0 end:0x80024DCC
+	extabindex  start:0x8003C930 end:0x8003C9B4
+	.text       start:0x802D5D78 end:0x802D7340
+	.ctors      start:0x8046250C end:0x80462514
+
+game/ui/shop_model_preview_and_icons.cpp:
+	extab       start:0x80024DCC end:0x80025034
+	extabindex  start:0x8003C9B4 end:0x8003CA5C
+	.text       start:0x802D7340 end:0x802D8A98
+	.ctors      start:0x80462514 end:0x80462520
+
+game/chara/model_operation_chara_caddie.cpp:
+	extab       start:0x80025034 end:0x800250F8
+	extabindex  start:0x8003CA5C end:0x8003CB4C
+	.text       start:0x802D8A98 end:0x802D95DC
+	.ctors      start:0x80462520 end:0x80462528
+
+game/ui/model_operation_exhibition_preview.cpp:
+	extab       start:0x800250F8 end:0x80025138
+	extabindex  start:0x8003CB4C end:0x8003CBAC
+	.text       start:0x802D95DC end:0x802D9CC4
+	.sdata2     start:0x805E0950 end:0x805E0968
+
+game/ui/item_info_and_clubhouse_msg.cpp:
+	extab       start:0x80025138 end:0x8002521C
+	extabindex  start:0x8003CBAC end:0x8003CC9C
+	.text       start:0x802D9CC4 end:0x802DABF4
+	.ctors      start:0x80462528 end:0x8046254C
+	.sdata2     start:0x805E0970 end:0x805E0978
+
+game/ui/shop_purchase_dialog_and_categories.cpp:
+	extab       start:0x8002521C end:0x80025324
+	extabindex  start:0x8003CC9C end:0x8003CDD4
+	.text       start:0x802DABF4 end:0x802DC0E8
+	.ctors      start:0x8046254C end:0x80462554
+	.sdata2     start:0x805E0980 end:0x805E09B0
+
+game/ui/club_dialog_and_item_cart.cpp:
+	extab       start:0x80025324 end:0x8002541C
+	extabindex  start:0x8003CDD4 end:0x8003CEC4
+	.text       start:0x802DC0E8 end:0x802DD5C0
+	.ctors      start:0x80462554 end:0x80462558
+	.sdata2     start:0x805E09B0 end:0x805E09D8
+
+game/ui/club_lvup_dialog_and_shop_submenus.cpp:
+	extab       start:0x8002541C end:0x800254DC
+	extabindex  start:0x8003CEC4 end:0x8003CF90
+	.text       start:0x802DD5C0 end:0x802DEA60
+	.ctors      start:0x80462558 end:0x8046255C
+	.sdata2     start:0x805E09E8 end:0x805E09F0
+
+game/ui/club_submenu_and_lvup_dialog.cpp:
+	extab       start:0x800254DC end:0x800255C0
+	extabindex  start:0x8003CF90 end:0x8003D05C
+	.text       start:0x802DEA60 end:0x802E001C
+	.ctors      start:0x8046255C end:0x80462564
+
+game/ui/player_status_hud.cpp:
+	extab       start:0x800255C0 end:0x80025674
+	extabindex  start:0x8003D05C end:0x8003D11C
+	.text       start:0x802E001C end:0x802E1770
+	.ctors      start:0x80462564 end:0x80462570
+	.sdata2     start:0x805E0A08 end:0x805E0A20
+
+game/modes/darts_system.cpp:
+	extab       start:0x80025674 end:0x800257AC
+	extabindex  start:0x8003D11C end:0x8003D1A0
+	.text       start:0x802E1770 end:0x802E2DD8
+	.sdata2     start:0x805E0A50 end:0x805E0A58
+
+game/modes/drive_contest_and_darts.cpp:
+	extab       start:0x800257AC end:0x8002585C
+	extabindex  start:0x8003D1A0 end:0x8003D230
+	.text       start:0x802E2DD8 end:0x802E43A8
+	.ctors      start:0x80462570 end:0x80462574
+	.sdata2     start:0x805E0A70 end:0x805E0A78
+
+game/modes/drive_system_distance_ranks.cpp:
+	extab       start:0x8002585C end:0x8002587C
+	extabindex  start:0x8003D230 end:0x8003D248
+	.text       start:0x802E43A8 end:0x802E486C
+	.ctors      start:0x80462574 end:0x80462578
+
+game/audio/voice_manager_candidates.cpp:
+	extab       start:0x8002587C end:0x800259D4
+	extabindex  start:0x8003D248 end:0x8003D254
+	.text       start:0x802E486C end:0x802E6030
+
+game/ui/stroke_point_2d_selector.cpp:
+	extab       start:0x800259D4 end:0x80025B54
+	extabindex  start:0x8003D254 end:0x8003D2F0
+	.text       start:0x802E6030 end:0x802E72B0
+	.ctors      start:0x80462578 end:0x8046257C
+
+game/ui/stroke_point_2d_dialog.cpp:
+	extab       start:0x80025B54 end:0x80025C90
+	extabindex  start:0x8003D2F0 end:0x8003D338
+	.text       start:0x802E72B0 end:0x802E8A04
+	.sdata2     start:0x805E0B50 end:0x805E0B58
+
+game/ui/map_camera_2d_panel.cpp:
+	extab       start:0x80025C90 end:0x80025E38
+	extabindex  start:0x8003D338 end:0x8003D3EC
+	.text       start:0x802E8A04 end:0x802E9EE8
+	.ctors      start:0x8046257C end:0x80462584
+	.sdata2     start:0x805E0B68 end:0x805E0B88
+
+game/ui/option_dialog_control_mode_audio.cpp:
+	extab       start:0x80025E38 end:0x80025E98
+	extabindex  start:0x8003D3EC end:0x8003D458
+	.text       start:0x802E9EE8 end:0x802EB60C
+	.ctors      start:0x80462584 end:0x80462588
+	.sdata2     start:0x805E0BA8 end:0x805E0BB0
+
+game/modes/tour_map_preview_tree.cpp:
+	extab       start:0x80025E98 end:0x80025EA8
+	extabindex  start:0x8003D458 end:0x8003D470
+	.text       start:0x802EB60C end:0x802EC144
+
+game/modes/tour_character_map_board.cpp:
+	extab       start:0x80025EA8 end:0x800262A4
+	extabindex  start:0x8003D470 end:0x8003D554
+	.text       start:0x802EC144 end:0x802F40C8
+	.sdata2     start:0x805E0C28 end:0x805E0C30
+
+game/golf/map_data_default_virtuals.cpp:
+	.text       start:0x802F40C8 end:0x802F4320
+
+game/modes/tour_board_preview_controller.cpp:
+	extab       start:0x800262A4 end:0x8002633C
+	extabindex  start:0x8003D554 end:0x8003D608
+	.text       start:0x802F4320 end:0x802F562C
+	.ctors      start:0x80462588 end:0x80462590
+
+game/modes/tour_task_item_map_and_model_preview.cpp:
+	extab       start:0x8002633C end:0x80026394
+	extabindex  start:0x8003D608 end:0x8003D68C
+	.text       start:0x802F562C end:0x802F61E4
+	.ctors      start:0x80462590 end:0x80462598
+
+game/modes/tour_vs_window_part1.cpp:
+	extab       start:0x80026394 end:0x80026410
+	extabindex  start:0x8003D68C end:0x8003D710
+	.text       start:0x802F61E4 end:0x802F85E0
+	.ctors      start:0x80462598 end:0x8046259C
+	.sdata2     start:0x805E1238 end:0x805E12C8
+
+game/modes/tour_vs_window_part2.cpp:
+	extab       start:0x80026410 end:0x800264E0
+	extabindex  start:0x8003D710 end:0x8003D7C4
+	.text       start:0x802F85E0 end:0x802F9B40
+	.ctors      start:0x8046259C end:0x804625A4
+
+game/modes/tour_area_select.cpp:
+	extab       start:0x800264E0 end:0x800264F8
+	extabindex  start:0x8003D7C4 end:0x8003D7E8
+	.text       start:0x802F9B40 end:0x802FA3EC
+
+game/modes/tour_area_selection_menu.cpp:
+	extab       start:0x800264F8 end:0x800265C0
+	extabindex  start:0x8003D7E8 end:0x8003D830
+	.text       start:0x802FA3EC end:0x802FBA74
+	.ctors      start:0x804625A4 end:0x804625A8
+
+game/modes/tour_change_character_window.cpp:
+	extab       start:0x800265C0 end:0x800266F0
+	extabindex  start:0x8003D830 end:0x8003D8E4
+	.text       start:0x802FBA74 end:0x802FD1D8
+	.ctors      start:0x804625A8 end:0x804625AC
+	.sdata2     start:0x805E1300 end:0x805E1308
+
+game/modes/tour_hint_window_and_fade.cpp:
+	extab       start:0x800266F0 end:0x800267FC
+	extabindex  start:0x8003D8E4 end:0x8003D974
+	.text       start:0x802FD1D8 end:0x802FE92C
+	.ctors      start:0x804625AC end:0x804625B0
+
+game/modes/tour_hint_message_window.cpp:
+	extab       start:0x800267FC end:0x80026844
+	extabindex  start:0x8003D974 end:0x8003D9E0
+	.text       start:0x802FE92C end:0x802FF968
+
+game/modes/tour_hint_window.cpp:
+	extab       start:0x80026844 end:0x8002688C
+	extabindex  start:0x8003D9E0 end:0x8003DA04
+	.text       start:0x802FF968 end:0x80300EC8
+	.ctors      start:0x804625B0 end:0x804625B4
+
+game/save/item_request_state.cpp:
+	extab       start:0x8002688C end:0x80026938
+	extabindex  start:0x8003DA04 end:0x8003DA58
+	.text       start:0x80300EC8 end:0x80301720
+
+game/save/save_rewards_item_unlock_flags.cpp:
+	extab       start:0x80026938 end:0x80026EFC
+	extabindex  start:0x8003DA58 end:0x8003DC20
+	.text       start:0x80301720 end:0x8030C0E8
+
+game/modes/tour_main_task.cpp:
+	extab       start:0x80026EFC end:0x80026F80
+	extabindex  start:0x8003DC20 end:0x8003DC98
+	.text       start:0x8030C0E8 end:0x8030D804
+	.ctors      start:0x804625B4 end:0x804625BC
+
+game/ui/ball_wind_2d_hud.cpp:
+	extab       start:0x80026F80 end:0x80027088
+	extabindex  start:0x8003DC98 end:0x8003DCF8
+	.text       start:0x8030D804 end:0x8030EE64
+	.ctors      start:0x804625BC end:0x804625C0
+
+game/modes/dolfini_round_main.cpp:
+	extab       start:0x80027088 end:0x80027244
+	extabindex  start:0x8003DCF8 end:0x8003DD4C
+	.text       start:0x8030EE64 end:0x80314290
+
+game/modes/round_dol3d_spinning_dolfini_scene.cpp:
+	extab       start:0x80027244 end:0x800272BC
+	extabindex  start:0x8003DD4C end:0x8003DD88
+	.text       start:0x80314290 end:0x803156A4
+	.ctors      start:0x804625C0 end:0x804625C4
+
+game/modes/round_dol_gurudol_minigame.cpp:
+	extab       start:0x800272BC end:0x80027354
+	extabindex  start:0x8003DD88 end:0x8003DE3C
+	.text       start:0x803156A4 end:0x80316848
+	.ctors      start:0x804625C4 end:0x804625C8
+	.sdata2     start:0x805E1428 end:0x805E1430
+
+game/ui/golf_base_2d_hud_layout.cpp:
+	extab       start:0x80027354 end:0x800274AC
+	extabindex  start:0x8003DE3C end:0x8003DEF0
+	.text       start:0x80316848 end:0x80318428
+	.ctors      start:0x804625C8 end:0x804625D0
+	.sdata2     start:0x805E1438 end:0x805E1460
+
+game/audio/bgm_collection_dtor.cpp:
+	extab       start:0x800274AC end:0x800274B4
+	extabindex  start:0x8003DEF0 end:0x8003DEFC
+	.text       start:0x80318428 end:0x80318714
+
+game/ui/bgm_collection_screen_part1.cpp:
+	extab       start:0x800274B4 end:0x80027600
+	extabindex  start:0x8003DEFC end:0x8003DF50
+	.text       start:0x80318714 end:0x80319AD8
+
+game/ui/bgm_collection_screen_part2.cpp:
+	extab       start:0x80027600 end:0x80027678
+	extabindex  start:0x8003DF50 end:0x8003DFD4
+	.text       start:0x80319AD8 end:0x80319FDC
+	.ctors      start:0x804625D0 end:0x804625D8
+
+game/ui/course_and_hole_select_screens.cpp:
+	extab       start:0x80027678 end:0x80027818
+	extabindex  start:0x8003DFD4 end:0x8003E088
+	.text       start:0x80319FDC end:0x8031B3C0
+	.ctors      start:0x804625D8 end:0x804625E4
+
+game/ui/course_select_menu.cpp:
+	extab       start:0x80027818 end:0x80027B44
+	extabindex  start:0x8003E088 end:0x8003E1A8
+	.text       start:0x8031B3C0 end:0x8031F3A4
+	.sdata2     start:0x805E1480 end:0x805E1488
+
+game/ui/swing_result_hud_and_equipped_stats.cpp:
+	extab       start:0x80027B44 end:0x80027B94
+	extabindex  start:0x8003E1A8 end:0x8003E220
+	.text       start:0x8031F3A4 end:0x8031FD4C
+	.ctors      start:0x804625E4 end:0x804625FC
+
+game/modes/tour_hint_window_and_description.cpp:
+	extab       start:0x80027B94 end:0x80027C58
+	extabindex  start:0x8003E220 end:0x8003E28C
+	.text       start:0x8031FD4C end:0x80321370
+	.ctors      start:0x804625FC end:0x80462600
+
+game/ui/com_select_base_menu.cpp:
+	extab       start:0x80027C58 end:0x80027CE0
+	extabindex  start:0x8003E28C end:0x8003E304
+	.text       start:0x80321370 end:0x80322AA4
+	.sdata2     start:0x805E14E0 end:0x805E14E8
+
+game/ui/com_select_match_screen.cpp:
+	extab       start:0x80027CE0 end:0x80027F00
+	extabindex  start:0x8003E304 end:0x8003E3AC
+	.text       start:0x80322AA4 end:0x8032413C
+	.ctors      start:0x80462600 end:0x80462604
+
+game/modes/stroke_match_selection_text.cpp:
+	extab       start:0x80027F00 end:0x800280A8
+	extabindex  start:0x8003E3AC end:0x8003E40C
+	.text       start:0x8032413C end:0x80324FA4
+	.ctors      start:0x80462604 end:0x80462608
+
+game/ui/com_select_stroke_screen.cpp:
+	extab       start:0x800280A8 end:0x80028128
+	extabindex  start:0x8003E40C end:0x8003E46C
+	.text       start:0x80324FA4 end:0x80325650
+
+game/modes/minigame_aim_and_party_tiers.cpp:
+	extab       start:0x80028128 end:0x800281EC
+	extabindex  start:0x8003E46C end:0x8003E4E4
+	.text       start:0x80325650 end:0x80326994
+	.ctors      start:0x80462608 end:0x80462618
+	.sdata2     start:0x805E14F8 end:0x805E1500
+
+game/ui/create_new_account_and_ingame_status.cpp:
+	extab       start:0x800281EC end:0x800282B4
+	extabindex  start:0x8003E4E4 end:0x8003E5B0
+	.text       start:0x80326994 end:0x803280FC
+	.ctors      start:0x80462618 end:0x80462620
+	.sdata2     start:0x805E1520 end:0x805E1548
+
+game/ui/ingame_status_hud_and_ranking.cpp:
+	extab       start:0x800282B4 end:0x800283A8
+	extabindex  start:0x8003E5B0 end:0x8003E628
+	.text       start:0x803280FC end:0x803297B8
+	.ctors      start:0x80462620 end:0x8046262C
+
+game/ui/view_rank_and_fight_result_menu.cpp:
+	extab       start:0x800283A8 end:0x80028480
+	extabindex  start:0x8003E628 end:0x8003E6C4
+	.text       start:0x803297B8 end:0x8032AE10
+	.ctors      start:0x8046262C end:0x80462638
+	.sdata2     start:0x805E1578 end:0x805E1580
+
+game/ui/result_menu_and_fight_result.cpp:
+	extab       start:0x80028480 end:0x8002854C
+	extabindex  start:0x8003E6C4 end:0x8003E760
+	.text       start:0x8032AE10 end:0x8032D0FC
+	.ctors      start:0x80462638 end:0x80462640
+	.sdata2     start:0x805E1598 end:0x805E15B8
+
+game/ui/wii_pause_score_ctor.cpp:
+	extab       start:0x8002854C end:0x800287F0
+	extabindex  start:0x8003E760 end:0x8003E76C
+	.text       start:0x8032D0FC end:0x8032E804
+
+game/ui/wii_pause_score_screen.cpp:
+	extab       start:0x800287F0 end:0x80028980
+	extabindex  start:0x8003E76C end:0x8003E838
+	.text       start:0x8032E804 end:0x80333CE8
+	.sdata2     start:0x805E1618 end:0x805E1620
+
+game/fx/tour_particle_effects.cpp:
+	extab       start:0x80028980 end:0x80028998
+	extabindex  start:0x8003E838 end:0x8003E85C
+	.text       start:0x80333CE8 end:0x80333FFC
+	.ctors      start:0x80462640 end:0x80462644
+
+game/fx/tour_load_effect_particles.cpp:
+	extab       start:0x80028998 end:0x80028B48
+	extabindex  start:0x8003E85C end:0x8003E928
+	.text       start:0x80333FFC end:0x80335C0C
+	.sdata2     start:0x805E1658 end:0x805E1660
+
+game/ui/password_screen_task.cpp:
+	extab       start:0x80028B48 end:0x80028C14
+	extabindex  start:0x8003E928 end:0x8003E9AC
+	.text       start:0x80335C0C end:0x803371A0
+	.ctors      start:0x80462644 end:0x8046264C
+
+game/ui/darts_dialog_and_load_data_menu.cpp:
+	extab       start:0x80028C14 end:0x80028D08
+	extabindex  start:0x8003E9AC end:0x8003EA18
+	.text       start:0x803371A0 end:0x80338838
+	.ctors      start:0x8046264C end:0x80462658
+
+game/ui/load_data_menu.cpp:
+	extab       start:0x80028D08 end:0x80028D88
+	extabindex  start:0x8003EA18 end:0x8003EA9C
+	.text       start:0x80338838 end:0x80339F44
+	.ctors      start:0x80462658 end:0x8046265C
+	.sdata2     start:0x805E16E0 end:0x805E16E8
+
+game/ui/load_data_menu_in_entry.cpp:
+	extab       start:0x80028D88 end:0x80028E30
+	extabindex  start:0x8003EA9C end:0x8003EB08
+	.text       start:0x80339F44 end:0x8033B5B8
+
+game/ui/tutorial_illust_2d_and_load_data_menu.cpp:
+	extab       start:0x80028E30 end:0x80028F50
+	extabindex  start:0x8003EB08 end:0x8003EBC8
+	.text       start:0x8033B5B8 end:0x8033CADC
+	.ctors      start:0x8046265C end:0x8046266C
+	.sdata2     start:0x805E1708 end:0x805E1710
+
+Runtime.PPCEABI.H/__init_cpp_exceptions.cpp:
+	.text       start:0x803670FC end:0x8036716C
+	.ctors      start:0x80461FA0 end:0x80461FA4 rename:.ctors$10
+	.dtors      start:0x80462760 end:0x80462764 rename:.dtors$10
+	.dtors      start:0x80462764 end:0x80462768 rename:.dtors$15
+	.sdata      start:0x805DBE30 end:0x805DBE38
+
+engine/gtl/gtl_image_decode_and_tiling.cpp:
+	extab       start:0x800295F8 end:0x80029658
+	extabindex  start:0x8003F0C0 end:0x8003F150
+	.text       start:0x803D3044 end:0x803D4098
+	.rodata     start:0x80498C68 end:0x80498C90
+	.data       start:0x804D9BA8 end:0x804D9BEC
+
+engine/gtl/gtl_image_layout_and_sizing.cpp:
+	extab       start:0x80029658 end:0x80029688
+	extabindex  start:0x8003F150 end:0x8003F198
+	.text       start:0x803D4098 end:0x803D4E18
+	.data       start:0x804D9BEC end:0x804D9DF8
+
+engine/gtl/gtl_image_format_dispatch.cpp:
+	extab       start:0x80029688 end:0x800296A8
+	extabindex  start:0x8003F198 end:0x8003F1C8
+	.text       start:0x803D4E18 end:0x803D6468
+	.rodata     start:0x80498C90 end:0x80498D70
+	.data       start:0x804D9DF8 end:0x804DA130
+
+engine/gtl/gtl_image_font_resource_adapters.cpp:
+	extab       start:0x800296A8 end:0x80029738
+	extabindex  start:0x8003F1C8 end:0x8003F234
+	.text       start:0x803D6468 end:0x803D7914
+
+engine/gtl/gtl_resource_chunk_sort.cpp:
+	extab       start:0x80029738 end:0x80029740
+	extabindex  start:0x8003F234 end:0x8003F240
+	.text       start:0x803D7914 end:0x803D7E18
+
+engine/gtl/gtl_resource_chunk_sort3.cpp:
+	extab       start:0x80029740 end:0x80029748
+	extabindex  start:0x8003F240 end:0x8003F24C
+	.text       start:0x803D7E18 end:0x803D7FE8
+
+engine/gtl/gtl_generic_resource_loading.cpp:
+	extab       start:0x80029748 end:0x800297CC
+	extabindex  start:0x8003F24C end:0x8003F2D0
+	.text       start:0x803D7FE8 end:0x803D8678
+
+engine/gtl/gtl_generic_resource_file_chunk.cpp:
+	extab       start:0x800297CC end:0x800297D4
+	extabindex  start:0x8003F2D0 end:0x8003F2DC
+	.text       start:0x803D8678 end:0x803D86E4
+
+engine/gtl/gtl_model_resource_storage.cpp:
+	extab       start:0x800297D4 end:0x800297DC
+	extabindex  start:0x8003F2DC end:0x8003F2E8
+	.text       start:0x803D86E4 end:0x803D8920
+
+engine/gtl/gtl_generic_model_resource.cpp:
+	extab       start:0x800297DC end:0x800298B0
+	extabindex  start:0x8003F2E8 end:0x8003F2F4
+	.text       start:0x803D8920 end:0x803D9250
+
+engine/gtl/gtl_generic_modeling_resource_dtor.cpp:
+	extab       start:0x800298B0 end:0x800298B8
+	extabindex  start:0x8003F2F4 end:0x8003F300
+	.text       start:0x803D9250 end:0x803D9498
+
+engine/gtl/gtl_generic_modeling_resource_draw.cpp:
+	.text       start:0x803D9498 end:0x803D94A4
+
+engine/gtl/gtl_generic_modeling_resource_part1.cpp:
+	extab       start:0x800298B8 end:0x800298C0
+	extabindex  start:0x8003F300 end:0x8003F30C
+	.text       start:0x803D94A4 end:0x803D94FC
+
+engine/gtl/gtl_generic_modeling_resource_eval.cpp:
+	extab       start:0x800298C0 end:0x800298C8
+	extabindex  start:0x8003F30C end:0x8003F318
+	.text       start:0x803D94FC end:0x803D9550
+
+engine/gtl/gtl_material_animation_eval.cpp:
+	extab       start:0x800298C8 end:0x800298D0
+	extabindex  start:0x8003F318 end:0x8003F324
+	.text       start:0x803D9550 end:0x803D9594
+
+engine/gtl/generic_modeling_resource_description.cpp:
+	extab       start:0x800298D0 end:0x800298D8
+	extabindex  start:0x8003F324 end:0x8003F330
+	.text       start:0x803D9594 end:0x803D97C0
+
+engine/gtl/generic_modeling_resource_counts.cpp:
+	.text       start:0x803D97C0 end:0x803D980C
+
+engine/gtl/gtl_generic_modeling_resource_clone.cpp:
+	extab       start:0x800298D8 end:0x800298E0
+	extabindex  start:0x8003F330 end:0x8003F33C
+	.text       start:0x803D980C end:0x803D9DB8
+
+engine/gtl/gtl_graphics_resource_vectors.cpp:
+	extab       start:0x800298E0 end:0x80029B30
+	extabindex  start:0x8003F33C end:0x8003F36C
+	.text       start:0x803D9DB8 end:0x803DB238
+
+engine/gtl/gtl_vertex_declaration_vector.cpp:
+	extab       start:0x80029B30 end:0x80029BC4
+	extabindex  start:0x8003F36C end:0x8003F378
+	.text       start:0x803DB238 end:0x803DB750
+
+engine/gtl/gtl_generic_modeling_resource_part2.cpp:
+	extab       start:0x80029BC4 end:0x80029BCC
+	extabindex  start:0x8003F378 end:0x8003F384
+	.text       start:0x803DB750 end:0x803DB888
+
+engine/gtl/gtl_model_resource_and_culling.cpp:
+	.text       start:0x803DB888 end:0x803DB94C
+
+engine/gtl/gtl_generic_animation_resource_part1.cpp:
+	extab       start:0x80029BCC end:0x80029BD4
+	extabindex  start:0x8003F384 end:0x8003F390
+	.text       start:0x803DB94C end:0x803DB9F8
+
+engine/gtl/gtl_animation_resource_evaluate.cpp:
+	extab       start:0x80029BD4 end:0x80029BDC
+	extabindex  start:0x8003F390 end:0x8003F39C
+	.text       start:0x803DB9F8 end:0x803DBA58
+
+engine/gtl/gtl_generic_animation_resource_part2.cpp:
+	extab       start:0x80029BDC end:0x80029BE4
+	extabindex  start:0x8003F39C end:0x8003F3A8
+	.text       start:0x803DBA58 end:0x803DBAA8
+
+engine/gtl/gtl_generic_environment_resource.cpp:
+	extab       start:0x80029BE4 end:0x80029BEC
+	extabindex  start:0x8003F3A8 end:0x8003F3B4
+	.text       start:0x803DBAA8 end:0x803DBB54
+
+engine/gtl/gtl_generic_environment_resource_apply.cpp:
+	extab       start:0x80029BEC end:0x80029BF4
+	extabindex  start:0x8003F3B4 end:0x8003F3C0
+	.text       start:0x803DBB54 end:0x803DBB84
+
+engine/gtl/gtl_environment_light_count.cpp:
+	extab       start:0x80029BF4 end:0x80029BFC
+	extabindex  start:0x8003F3C0 end:0x8003F3CC
+	.text       start:0x803DBB84 end:0x803DBBEC
+
+game/fx/environment_light_resource_export.cpp:
+	extab       start:0x80029BFC end:0x80029C04
+	extabindex  start:0x8003F3CC end:0x8003F3D8
+	.text       start:0x803DBBEC end:0x803DBC90
+
+engine/gtl/gtl_generic_environment.cpp:
+	extab       start:0x80029C04 end:0x80029C34
+	extabindex  start:0x8003F3D8 end:0x8003F420
+	.text       start:0x803DBC90 end:0x803DC300
+
+engine/gtl/gtl_generic_renderer_vertex_decl.cpp:
+	extab       start:0x80029C34 end:0x80029C3C
+	extabindex  start:0x8003F420 end:0x8003F42C
+	.text       start:0x803DC300 end:0x803DC378
+
+engine/gtl/gtl_generic_renderer_scratch_clear.cpp:
+	.text       start:0x803DC378 end:0x803DC3AC
+
+engine/gtl/gtl_renderer_draw_queue_clear.cpp:
+	extab       start:0x80029C3C end:0x80029C44
+	extabindex  start:0x8003F42C end:0x8003F438
+	.text       start:0x803DC3AC end:0x803DC474
+
+engine/gtl/gtl_generic_renderer_scratch_buffers.cpp:
+	extab       start:0x80029C44 end:0x80029D74
+	extabindex  start:0x8003F438 end:0x8003F444
+	.text       start:0x803DC474 end:0x803DCF8C
+
+engine/gtl/gtl_generic_renderer_init.cpp:
+	extab       start:0x80029D74 end:0x80029D7C
+	extabindex  start:0x8003F444 end:0x8003F450
+	.text       start:0x803DCF8C end:0x803DD064
+
+engine/gtl/gtl_generic_renderer_context_ctor.cpp:
+	.text       start:0x803DD064 end:0x803DD09C
+
+engine/gtl/gtl_generic_renderer_context.cpp:
+	extab       start:0x80029D7C end:0x80029D84
+	extabindex  start:0x8003F450 end:0x8003F45C
+	.text       start:0x803DD09C end:0x803DD1BC
+
+engine/gtl/gtl_generic_model_graphics_load.cpp:
+	extab       start:0x80029D84 end:0x80029D94
+	extabindex  start:0x8003F45C end:0x8003F474
+	.text       start:0x803DD1BC end:0x803DDA9C
+
+engine/gtl/gtl_generic_renderer_material.cpp:
+	extab       start:0x80029D94 end:0x80029D9C
+	extabindex  start:0x8003F474 end:0x8003F480
+	.text       start:0x803DDA9C end:0x803DDE94
+
+engine/gtl/gtl_renderer_bind_vertex_streams.cpp:
+	extab       start:0x80029D9C end:0x80029DA4
+	extabindex  start:0x8003F480 end:0x8003F48C
+	.text       start:0x803DDE94 end:0x803DE3E0
+
+engine/gtl/gtl_vertex_blend_transforms.cpp:
+	extab       start:0x80029DA4 end:0x80029DAC
+	extabindex  start:0x8003F48C end:0x8003F498
+	.text       start:0x803DE3E0 end:0x803DE6BC
+
+engine/gtl/gtl_model_culling_billboard_curve.cpp:
+	extab       start:0x80029DAC end:0x80029F8C
+	extabindex  start:0x8003F498 end:0x8003F564
+	.text       start:0x803DE6BC end:0x803E02C0
+
+engine/gtl/gtl_animation_hermite_vec3.cpp:
+	extab       start:0x80029F8C end:0x80029F94
+	extabindex  start:0x8003F564 end:0x8003F570
+	.text       start:0x803E02C0 end:0x803E02F0
+
+engine/gtl/gtl_animation_bezier_interpolate.cpp:
+	extab       start:0x80029F94 end:0x80029F9C
+	extabindex  start:0x8003F570 end:0x8003F57C
+	.text       start:0x803E02F0 end:0x803E0594
+
+engine/gtl/gtl_animation_bezier_vec2_interp.cpp:
+	extab       start:0x80029F9C end:0x80029FA4
+	extabindex  start:0x8003F57C end:0x8003F588
+	.text       start:0x803E0594 end:0x803E08B0
+
+engine/gtl/gtl_animation_bezier_vec3.cpp:
+	extab       start:0x80029FA4 end:0x80029FAC
+	extabindex  start:0x8003F588 end:0x8003F594
+	.text       start:0x803E08B0 end:0x803E0BCC
+
+engine/gtl/gtl_animation_bezier_interp.cpp:
+	extab       start:0x80029FAC end:0x80029FB4
+	extabindex  start:0x8003F594 end:0x8003F5A0
+	.text       start:0x803E0BCC end:0x803E0EE8
+
+engine/gtl/gtl_animation_interpolate_vec4.cpp:
+	extab       start:0x80029FB4 end:0x80029FBC
+	extabindex  start:0x8003F5A0 end:0x8003F5AC
+	.text       start:0x803E0EE8 end:0x803E0F0C
+
+engine/gtl/gtl_animation_interpolate_vec3.cpp:
+	extab       start:0x80029FBC end:0x80029FC4
+	extabindex  start:0x8003F5AC end:0x8003F5B8
+	.text       start:0x803E0F0C end:0x803E0F30
+
+engine/gtl/gtl_animation_node_evaluate.cpp:
+	extab       start:0x80029FC4 end:0x80029FCC
+	extabindex  start:0x8003F5B8 end:0x8003F5C4
+	.text       start:0x803E0F30 end:0x803E14D0
+
+engine/gtl/gtl_animation_model_matrices.cpp:
+	extab       start:0x80029FCC end:0x80029FD4
+	extabindex  start:0x8003F5C4 end:0x8003F5D0
+	.text       start:0x803E14D0 end:0x803E251C
+
+engine/gtl/gtl_animation_node_evaluation.cpp:
+	extab       start:0x80029FD4 end:0x80029FDC
+	extabindex  start:0x8003F5D0 end:0x8003F5DC
+	.text       start:0x803E251C end:0x803E33A8
+
+engine/gtl/gtl_animation_transform_channels.cpp:
+	extab       start:0x80029FDC end:0x80029FE4
+	extabindex  start:0x8003F5DC end:0x8003F5E8
+	.text       start:0x803E33A8 end:0x803E3AB8
+
+engine/gtl/gtl_texture_animation_matrices.cpp:
+	extab       start:0x80029FE4 end:0x80029FEC
+	extabindex  start:0x8003F5E8 end:0x8003F5F4
+	.text       start:0x803E3AB8 end:0x803E4220
+
+engine/gtl/gtl_bitmap_font_and_anim_keys.cpp:
+	extab       start:0x80029FEC end:0x8002A0CC
+	extabindex  start:0x8003F5F4 end:0x8003F624
+	.text       start:0x803E4220 end:0x803E56D8
+
+engine/gtl/gtl_bitmap_font_draw.cpp:
+	extab       start:0x8002A0CC end:0x8002A2B4
+	extabindex  start:0x8003F624 end:0x8003F6D8
+	.text       start:0x803E56D8 end:0x803E68B0
+	.ctors      start:0x80462670 end:0x80462674
+
+engine/gtl/gtl_dxt_decode_and_pixel_convert.cpp:
+	extab       start:0x8002A2B4 end:0x8002A2DC
+	extabindex  start:0x8003F6D8 end:0x8003F714
+	.text       start:0x803E68B0 end:0x803E78EC
+	.sdata2     start:0x805E2108 end:0x805E2148
+
+engine/gtl/gtl_transform_frustum_stopwatch_input.cpp:
+	extab       start:0x8002A2DC end:0x8002A334
+	extabindex  start:0x8003F714 end:0x8003F798
+	.text       start:0x803E78EC end:0x803E8244
+
+engine/gtl/gtl_inputex_device_poll.cpp:
+	extab       start:0x8002A334 end:0x8002A33C
+	extabindex  start:0x8003F798 end:0x8003F7A4
+	.text       start:0x803E8244 end:0x803E833C
+
+engine/gtl/gtl_input_ex_devices_part1.cpp:
+	extab       start:0x8002A33C end:0x8002A4D4
+	extabindex  start:0x8003F7A4 end:0x8003F894
+	.text       start:0x803E833C end:0x803E9BB8
+	.sdata2     start:0x805E2160 end:0x805E2190
+
+engine/gtl/gtl_screen_pointer_raw_samples.cpp:
+	.text       start:0x803E9BB8 end:0x803E9BC0
+
+engine/gtl/gtl_screen_pointer_reset_buttons.cpp:
+	extab       start:0x8002A4D4 end:0x8002A4DC
+	extabindex  start:0x8003F894 end:0x8003F8A0
+	.text       start:0x803E9BC0 end:0x803E9C40
+
+engine/gtl/gtl_input_ex_devices_part2.cpp:
+	extab       start:0x8002A4DC end:0x8002A56C
+	extabindex  start:0x8003F8A0 end:0x8003F918
+	.text       start:0x803E9C40 end:0x803EAC48
+
+engine/gtl/gtl_input_ex_button_part1.cpp:
+	extab       start:0x8002A56C end:0x8002A694
+	extabindex  start:0x8003F918 end:0x8003F93C
+	.text       start:0x803EAC48 end:0x803EB544
+
+engine/gtl/gtl_input_ex_button_reset.cpp:
+	extab       start:0x8002A694 end:0x8002A69C
+	extabindex  start:0x8003F93C end:0x8003F948
+	.text       start:0x803EB544 end:0x803EB580
+
+engine/gtl/gtl_input_ex_button_part2.cpp:
+	extab       start:0x8002A69C end:0x8002A6AC
+	extabindex  start:0x8003F948 end:0x8003F960
+	.text       start:0x803EB580 end:0x803EB6DC
+
+engine/gtl/gtl_input_ex_analog_button.cpp:
+	extab       start:0x8002A6AC end:0x8002A6B4
+	extabindex  start:0x8003F960 end:0x8003F96C
+	.text       start:0x803EB6DC end:0x803EB71C
+
+engine/gtl/gtl_input_ex_digital_button_part1.cpp:
+	.text       start:0x803EB71C end:0x803EB724
+
+engine/gtl/gtl_input_ex_digital_button_part2.cpp:
+	extab       start:0x8002A6B4 end:0x8002A6BC
+	extabindex  start:0x8003F96C end:0x8003F978
+	.text       start:0x803EB724 end:0x803EB764
+
+engine/gtl/gtl_media_sample_pool.cpp:
+	extab       start:0x8002A6BC end:0x8002A778
+	extabindex  start:0x8003F978 end:0x8003FA14
+	.text       start:0x803EFA74 end:0x803F11C8
+
+engine/gtl/gtl_word_deque_ring_buffer.cpp:
+	extab       start:0x8002A778 end:0x8002A898
+	extabindex  start:0x8003FA14 end:0x8003FA8C
+	.text       start:0x803F11C8 end:0x803F28F8
+
+engine/gtl/gtl_pointer_ring_and_sample_deque.cpp:
+	extab       start:0x8002A898 end:0x8002A958
+	extabindex  start:0x8003FA8C end:0x8003FAF8
+	.text       start:0x803F28F8 end:0x803F364C
+
+engine/gtl/gtl_media_pipeline_filters.cpp:
+	extab       start:0x8002A958 end:0x8002A9D8
+	extabindex  start:0x8003FAF8 end:0x8003FB88
+	.text       start:0x803F364C end:0x803F3F84
+
+engine/gtl/gtl_media_pipeline_filter_manager.cpp:
+	extab       start:0x8002A9D8 end:0x8002AAB8
+	extabindex  start:0x8003FB88 end:0x8003FC78
+	.text       start:0x803F3F84 end:0x803F5428
+
+engine/gtl/gtl_media_sample_and_sampling_filter.cpp:
+	extab       start:0x8002AAB8 end:0x8002AB30
+	extabindex  start:0x8003FC78 end:0x8003FCE4
+	.text       start:0x803F5428 end:0x803F5C5C
+
+engine/gtl/gtl_sampling_filter_queue_reset.cpp:
+	extab       start:0x8002AB30 end:0x8002AB38
+	extabindex  start:0x8003FCE4 end:0x8003FCF0
+	.text       start:0x803F5C5C end:0x803F5F00
+
+engine/gtl/gtl_sampling_filter_queues.cpp:
+	extab       start:0x8002AB38 end:0x8002AC18
+	extabindex  start:0x8003FCF0 end:0x8003FD74
+	.text       start:0x803F5F00 end:0x803F74E4
+
+engine/gtl/gtl_pointer_ring_and_paged_queue.cpp:
+	extab       start:0x8002AC18 end:0x8002AC38
+	extabindex  start:0x8003FD74 end:0x8003FD8C
+	.text       start:0x803F74E4 end:0x803F7B14
+
+engine/gtl/gtl_source_split_transform_filters.cpp:
+	extab       start:0x8002AC38 end:0x8002AD84
+	extabindex  start:0x8003FD8C end:0x8003FE94
+	.text       start:0x803F7B14 end:0x803F8E58
+
+engine/gtl/gtl_transform_filter_show_counter.cpp:
+	extab       start:0x8002AD84 end:0x8002ADBC
+	extabindex  start:0x8003FE94 end:0x8003FEE8
+	.text       start:0x803F8E58 end:0x803F9144
+
+engine/gtl/gtl_revolution_show_counter_part1.cpp:
+	extab       start:0x8002ADBC end:0x8002ADC4
+	extabindex  start:0x8003FEE8 end:0x8003FEF4
+	.text       start:0x803F9144 end:0x803F9218
+	.sdata2     start:0x805E21D0 end:0x805E21D8
+
+engine/gtl/gtl_revolution_show_counter_part2.cpp:
+	extab       start:0x8002ADC4 end:0x8002ADCC
+	extabindex  start:0x8003FEF4 end:0x8003FF00
+	.text       start:0x803F9218 end:0x803F925C
+
+engine/gtl/gtl_revolution_filter_factory_part1.cpp:
+	extab       start:0x8002ADCC end:0x8002ADE4
+	extabindex  start:0x8003FF00 end:0x8003FF0C
+	.text       start:0x803F925C end:0x803F92F8
+
+engine/gtl/gtl_revolution_filter_factory_part2.cpp:
+	extab       start:0x8002ADE4 end:0x8002ADFC
+	extabindex  start:0x8003FF0C end:0x8003FF18
+	.text       start:0x803F92F8 end:0x803F9370
+
+engine/gtl/revolution_filter_factory_part1.cpp:
+	extab       start:0x8002ADFC end:0x8002AE14
+	extabindex  start:0x8003FF18 end:0x8003FF24
+	.text       start:0x803F9370 end:0x803F93E8
+
+engine/gtl/gtl_revolution_filter_factory_part3.cpp:
+	extab       start:0x8002AE14 end:0x8002AE2C
+	extabindex  start:0x8003FF24 end:0x8003FF30
+	.text       start:0x803F93E8 end:0x803F9460
+
+engine/gtl/revolution_strans_filter_factory.cpp:
+	extab       start:0x8002AE2C end:0x8002AE44
+	extabindex  start:0x8003FF30 end:0x8003FF3C
+	.text       start:0x803F9460 end:0x803F94D0
+
+engine/gtl/gtl_revolution_filter_manager_part1.cpp:
+	extab       start:0x8002AE44 end:0x8002AE68
+	extabindex  start:0x8003FF3C end:0x8003FF54
+	.text       start:0x803F94D0 end:0x803F9554
+
+engine/gtl/revolution_filter_factory_part2.cpp:
+	extab       start:0x8002AE68 end:0x8002AE80
+	extabindex  start:0x8003FF54 end:0x8003FF60
+	.text       start:0x803F9554 end:0x803F95E8
+
+engine/gtl/revolution_filter_manager.cpp:
+	extab       start:0x8002AE80 end:0x8002AE88
+	extabindex  start:0x8003FF60 end:0x8003FF6C
+	.text       start:0x803F95E8 end:0x803F9670
+
+engine/gtl/revolution_filter_show_counter.cpp:
+	extab       start:0x8002AE88 end:0x8002AEA0
+	extabindex  start:0x8003FF6C end:0x8003FF78
+	.text       start:0x803F9670 end:0x803F96CC
+
+engine/gtl/gtl_revolution_filter_manager_part2.cpp:
+	.text       start:0x803F96CC end:0x803F97FC
+
+engine/gtl/gtl_revolution_filter_manager_part3.cpp:
+	extab       start:0x8002AEA0 end:0x8002AEA8
+	extabindex  start:0x8003FF78 end:0x8003FF84
+	.text       start:0x803F97FC end:0x803F985C
+
+engine/gtl/gtl_revolution_sampling_filter_part1.cpp:
+	extab       start:0x8002AEA8 end:0x8002AEB8
+	extabindex  start:0x8003FF84 end:0x8003FF9C
+	.text       start:0x803F985C end:0x803F98EC
+
+engine/gtl/revolution_sampling_filter_fill.cpp:
+	extab       start:0x8002AEB8 end:0x8002AEC0
+	extabindex  start:0x8003FF9C end:0x8003FFA8
+	.text       start:0x803F98EC end:0x803F9A2C
+
+engine/gtl/gtl_revolution_sampling_filter_part2.cpp:
+	.text       start:0x803F9A2C end:0x803F9A3C
+
+engine/gtl/gtl_revolution_sampling_filter_part3.cpp:
+	extab       start:0x8002AEC0 end:0x8002AEC8
+	extabindex  start:0x8003FFA8 end:0x8003FFB4
+	.text       start:0x803F9A3C end:0x803F9A9C
+
+engine/gtl/gtl_revolution_source_filter.cpp:
+	extab       start:0x8002AEC8 end:0x8002AED8
+	extabindex  start:0x8003FFB4 end:0x8003FFCC
+	.text       start:0x803F9A9C end:0x803F9C24
+
+engine/gtl/revolution_source_filter_dtor.cpp:
+	extab       start:0x8002AED8 end:0x8002AEE0
+	extabindex  start:0x8003FFCC end:0x8003FFD8
+	.text       start:0x803F9C24 end:0x803F9C84
+
+engine/gtl/revolution_split_filter.cpp:
+	extab       start:0x8002AEE0 end:0x8002AEF0
+	extabindex  start:0x8003FFD8 end:0x8003FFF0
+	.text       start:0x803F9C84 end:0x803F9D60
+
+engine/gtl/gtl_revolution_split_filter.cpp:
+	extab       start:0x8002AEF0 end:0x8002AEF8
+	extabindex  start:0x8003FFF0 end:0x8003FFFC
+	.text       start:0x803F9D60 end:0x803F9DC0
+
+engine/gtl/gtl_revolution_stransfilter.cpp:
+	extab       start:0x8002AEF8 end:0x8002AF1C
+	extabindex  start:0x8003FFFC end:0x80040014
+	.text       start:0x803F9DC0 end:0x803F9ED8
+
+engine/gtl/gtl_revolution_strans_filter_alloc.cpp:
+	extab       start:0x8002AF1C end:0x8002AF24
+	extabindex  start:0x80040014 end:0x80040020
+	.text       start:0x803F9ED8 end:0x803F9F60
+
+engine/gtl/revolution_strans_audio_decode.cpp:
+	extab       start:0x8002AF24 end:0x8002AF2C
+	extabindex  start:0x80040020 end:0x8004002C
+	.text       start:0x803F9F60 end:0x803FA01C
+
+engine/gtl/gtl_revolution_vtrans_filter_part1.cpp:
+	extab       start:0x8002AF2C end:0x8002AF50
+	extabindex  start:0x8004002C end:0x80040044
+	.text       start:0x803FA01C end:0x803FA17C
+
+engine/gtl/gtl_revolution_vtrans_filter_part2.cpp:
+	extab       start:0x8002AF50 end:0x8002AF58
+	extabindex  start:0x80040044 end:0x80040050
+	.text       start:0x803FA17C end:0x803FA2E4
+
+engine/gtl/revolution_vtrans_thp_decode.cpp:
+	extab       start:0x8002AF58 end:0x8002AF60
+	extabindex  start:0x80040050 end:0x8004005C
+	.text       start:0x803FA2E4 end:0x803FA3F0
+
+engine/gtl/gtl_sound_effect_reverb_hi_part1.cpp:
+	extab       start:0x8002AF60 end:0x8002AF78
+	extabindex  start:0x8004005C end:0x80040080
+	.text       start:0x803FA3F0 end:0x803FA564
+
+engine/gtl/gtl_sound_effect_reverb_hi_part2.cpp:
+	extab       start:0x8002AF78 end:0x8002AF80
+	extabindex  start:0x80040080 end:0x8004008C
+	.text       start:0x803FA564 end:0x803FA670
+
+engine/gtl/sound_effect_reverb_hi_get_parameter.cpp:
+	extab       start:0x8002AF80 end:0x8002AF88
+	extabindex  start:0x8004008C end:0x80040098
+	.text       start:0x803FA670 end:0x803FA728
+
+engine/gtl/gtl_sound_effect_reverb_hi_part3.cpp:
+	extab       start:0x8002AF88 end:0x8002AFC8
+	extabindex  start:0x80040098 end:0x800400B0
+	.text       start:0x803FA728 end:0x803FA8D4
+	.ctors      start:0x80462674 end:0x80462678
+
+engine/gtl/gtl_sound_effect_reverb_hi_dpl2_part1.cpp:
+	extab       start:0x8002AFC8 end:0x8002AFD0
+	extabindex  start:0x800400B0 end:0x800400BC
+	.text       start:0x803FA8D4 end:0x803FA970
+
+engine/gtl/gtl_sound_effect_reverb_hi_dpl2_part2.cpp:
+	.text       start:0x803FA970 end:0x803FA98C
+
+engine/gtl/gtl_sound_effect_reverb_hidpl2.cpp:
+	extab       start:0x8002AFD0 end:0x8002AFD8
+	extabindex  start:0x800400BC end:0x800400C8
+	.text       start:0x803FA98C end:0x803FAAB0
+
+engine/gtl/sound_effect_reverb_hidpl2.cpp:
+	extab       start:0x8002AFD8 end:0x8002AFE0
+	extabindex  start:0x800400C8 end:0x800400D4
+	.text       start:0x803FAAB0 end:0x803FAB68
+
+engine/gtl/sound_effect_reverb_hi_dpl2.cpp:
+	extab       start:0x8002AFE0 end:0x8002B020
+	extabindex  start:0x800400D4 end:0x800400EC
+	.text       start:0x803FAB68 end:0x803FAD14
+	.ctors      start:0x80462678 end:0x8046267C
+
+engine/gtl/gtl_sound_effect_reverb_std_part1.cpp:
+	extab       start:0x8002B020 end:0x8002B028
+	extabindex  start:0x800400EC end:0x800400F8
+	.text       start:0x803FAD14 end:0x803FADB0
+
+engine/gtl/gtl_sound_effect_reverb_std_part2.cpp:
+	.text       start:0x803FADB0 end:0x803FADCC
+
+engine/gtl/sound_effect_reverb_std.cpp:
+	extab       start:0x8002B028 end:0x8002B030
+	extabindex  start:0x800400F8 end:0x80040104
+	.text       start:0x803FADCC end:0x803FAEE8
+
+engine/gtl/sound_effect_reverb_std_params.cpp:
+	extab       start:0x8002B030 end:0x8002B038
+	extabindex  start:0x80040104 end:0x80040110
+	.text       start:0x803FAEE8 end:0x803FAFA8
+
+engine/gtl/gtl_sound_effect_chorus_reverb.cpp:
+	extab       start:0x8002B038 end:0x8002B080
+	extabindex  start:0x80040110 end:0x80040134
+	.text       start:0x803FAFA8 end:0x803FB1FC
+	.ctors      start:0x8046267C end:0x80462680
+
+engine/gtl/sound_effect_chorus_params_part1.cpp:
+	extab       start:0x8002B080 end:0x8002B088
+	extabindex  start:0x80040134 end:0x80040140
+	.text       start:0x803FB1FC end:0x803FB2D4
+
+engine/gtl/sound_effect_chorus_params_part2.cpp:
+	extab       start:0x8002B088 end:0x8002B090
+	extabindex  start:0x80040140 end:0x8004014C
+	.text       start:0x803FB2D4 end:0x803FB370
+
+engine/gtl/gtl_sound_effect_delay_chorus.cpp:
+	extab       start:0x8002B090 end:0x8002B0D8
+	extabindex  start:0x8004014C end:0x80040170
+	.text       start:0x803FB370 end:0x803FB5A4
+	.ctors      start:0x80462680 end:0x80462684
+
+engine/gtl/sound_effect_delay.cpp:
+	extab       start:0x8002B0D8 end:0x8002B0E0
+	extabindex  start:0x80040170 end:0x8004017C
+	.text       start:0x803FB5A4 end:0x803FB67C
+
+engine/gtl/gtl_sound_effect_delay_params.cpp:
+	extab       start:0x8002B0E0 end:0x8002B0E8
+	extabindex  start:0x8004017C end:0x80040188
+	.text       start:0x803FB67C end:0x803FB718
+
+engine/gtl/gtl_audio_runtime_and_delay_effect.cpp:
+	extab       start:0x8002B0E8 end:0x8002B1C8
+	extabindex  start:0x80040188 end:0x80040224
+	.text       start:0x803FB718 end:0x803FC7FC
+	.ctors      start:0x80462684 end:0x80462688
+
+engine/gtl/gtl_audio_manager_and_sound_factory.cpp:
+	extab       start:0x8002B1C8 end:0x8002B2CC
+	extabindex  start:0x80040224 end:0x80040278
+	.text       start:0x803FC7FC end:0x803FDEC8
+
+engine/gtl/gtl_audio_spatial_and_runtime.cpp:
+	extab       start:0x8002B2CC end:0x8002B334
+	extabindex  start:0x80040278 end:0x80040314
+	.text       start:0x803FDEC8 end:0x803FF5B8
+	.ctors      start:0x80462688 end:0x80462690
+
+engine/gtl/gtl_sound_buffer_envelope_lfo.cpp:
+	extab       start:0x8002B334 end:0x8002B868
+	extabindex  start:0x80040314 end:0x800403BC
+	.text       start:0x803FF5B8 end:0x80400B80
+	.ctors      start:0x80462690 end:0x8046269C
+
+engine/gtl/gtl_sound_buffer_and_effects.cpp:
+	extab       start:0x8002B868 end:0x8002BB8C
+	extabindex  start:0x800403BC end:0x8004047C
+	.text       start:0x80400B80 end:0x804022BC
+	.ctors      start:0x8046269C end:0x804626A4
+
+engine/gtl/gtl_sound_stream_player.cpp:
+	extab       start:0x8002BB8C end:0x8002BEC0
+	extabindex  start:0x8004047C end:0x800404F4
+	.text       start:0x804022BC end:0x804033F8
+	.ctors      start:0x804626A4 end:0x804626A8
+
+engine/gtl/gtl_sound_stream_interface.cpp:
+	extab       start:0x8002BEC0 end:0x8002C004
+	extabindex  start:0x800404F4 end:0x8004053C
+	.text       start:0x804033F8 end:0x80403A8C
+	.ctors      start:0x804626A8 end:0x804626AC
+
+engine/gtl/gtl_sound_buffer_source.cpp:
+	extab       start:0x8002C004 end:0x8002C00C
+	extabindex  start:0x8004053C end:0x80040548
+	.text       start:0x80403A8C end:0x80403C14
+
+engine/gtl/gtl_sound_stream_source_callbacks.cpp:
+	extab       start:0x8002C00C end:0x8002C05C
+	extabindex  start:0x80040548 end:0x80040578
+	.text       start:0x80403C14 end:0x80403E80
+	.ctors      start:0x804626AC end:0x804626B0
+
+engine/gtl/gtl_file_load_task_and_stream_callback.cpp:
+	extab       start:0x8002C05C end:0x8002C06C
+	extabindex  start:0x80040578 end:0x80040590
+	.text       start:0x80403E80 end:0x80403EF4
+
+engine/gtl/gtl_dvd_file_stream_read_part1.cpp:
+	extab       start:0x8002C06C end:0x8002C098
+	extabindex  start:0x80040590 end:0x8004059C
+	.text       start:0x80403EF4 end:0x80404214
+
+engine/gtl/gtl_sound_stream_source_part1.cpp:
+	extab       start:0x8002C098 end:0x8002C0E0
+	extabindex  start:0x8004059C end:0x800405C0
+	.text       start:0x80404214 end:0x804043EC
+
+engine/gtl/gtl_sound_stream_source_part2.cpp:
+	extab       start:0x8002C0E0 end:0x8002C0E8
+	extabindex  start:0x800405C0 end:0x800405CC
+	.text       start:0x804043EC end:0x80404470
+
+engine/gtl/sound_stream_source_callback.cpp:
+	extab       start:0x8002C0E8 end:0x8002C0F0
+	extabindex  start:0x800405CC end:0x800405D8
+	.text       start:0x80404470 end:0x804044DC
+
+engine/gtl/gtl_sound_stream_source_part3.cpp:
+	extab       start:0x8002C0F0 end:0x8002C0F8
+	extabindex  start:0x800405D8 end:0x800405E4
+	.text       start:0x804044DC end:0x8040465C
+
+engine/gtl/gtl_sound_stream_source_part4.cpp:
+	.text       start:0x8040465C end:0x80404674
+
+engine/gtl/sound_stream_load_task_cancel.cpp:
+	extab       start:0x8002C0F8 end:0x8002C100
+	extabindex  start:0x800405E4 end:0x800405F0
+	.text       start:0x80404674 end:0x8040470C
+
+engine/gtl/gtl_audio_string.cpp:
+	extab       start:0x8002C100 end:0x8002C1AC
+	extabindex  start:0x800405F0 end:0x80040614
+	.text       start:0x8040470C end:0x80404D8C
+
+engine/gtl/sound_stream_data_load_task.cpp:
+	extab       start:0x8002C1AC end:0x8002C1B4
+	extabindex  start:0x80040614 end:0x80040620
+	.text       start:0x80404D8C end:0x80404DCC
+
+engine/gtl/gtl_audio_controller_effects.cpp:
+	extab       start:0x8002C1B4 end:0x8002C31C
+	extabindex  start:0x80040620 end:0x80040710
+	.text       start:0x80404DCC end:0x804064C0
+	.ctors      start:0x804626B0 end:0x804626B8
+
+engine/gtl/gtl_audio_voice_ax_control.cpp:
+	extab       start:0x8002C31C end:0x8002C678
+	extabindex  start:0x80040710 end:0x80040824
+	.text       start:0x804064C0 end:0x80407BD4
+	.ctors      start:0x804626B8 end:0x804626C0
+
+engine/gtl/gtl_ax_voice_control.cpp:
+	extab       start:0x8002C678 end:0x8002C950
+	extabindex  start:0x80040824 end:0x800408CC
+	.text       start:0x80407BD4 end:0x80409324
+	.ctors      start:0x804626C0 end:0x804626C4
+
+engine/gtl/gtl_voice_pool_basic_player_chorus.cpp:
+	extab       start:0x8002C950 end:0x8002CC18
+	extabindex  start:0x800408CC end:0x80040980
+	.text       start:0x80409324 end:0x80409F8C
+	.ctors      start:0x804626C4 end:0x804626CC
+
+engine/gtl/gtl_fx_chorus_shutdown.cpp:
+	extab       start:0x8002CC18 end:0x8002CC20
+	extabindex  start:0x80040980 end:0x8004098C
+	.text       start:0x80409F8C end:0x80409FEC
+
+engine/gtl/gtl_fx_chorus_params.cpp:
+	extab       start:0x8002CC20 end:0x8002CC28
+	extabindex  start:0x8004098C end:0x80040998
+	.text       start:0x80409FEC end:0x8040A124
+
+engine/gtl/gtl_fx_chorus_process_buffer.cpp:
+	extab       start:0x8002CC28 end:0x8002CC30
+	extabindex  start:0x80040998 end:0x800409A4
+	.text       start:0x8040A124 end:0x8040A174
+
+engine/gtl/gtl_nw4r_fx_delay_chorus.cpp:
+	extab       start:0x8002CC30 end:0x8002CC54
+	extabindex  start:0x800409A4 end:0x800409BC
+	.text       start:0x8040A174 end:0x8040A370
+	.ctors      start:0x804626CC end:0x804626D0
+
+engine/gtl/gtl_fx_delay_shutdown.cpp:
+	extab       start:0x8002CC54 end:0x8002CC5C
+	extabindex  start:0x800409BC end:0x800409C8
+	.text       start:0x8040A370 end:0x8040A3D0
+
+engine/gtl/gtl_fx_delay_audio_effect.cpp:
+	extab       start:0x8002CC5C end:0x8002CC64
+	extabindex  start:0x800409C8 end:0x800409D4
+	.text       start:0x8040A3D0 end:0x8040A4F8
+
+engine/gtl/gtl_fx_delay_audio_callback.cpp:
+	extab       start:0x8002CC64 end:0x8002CC6C
+	extabindex  start:0x800409D4 end:0x800409E0
+	.text       start:0x8040A4F8 end:0x8040A548
+
+engine/gtl/gtl_fx_reverb_hi.cpp:
+	extab       start:0x8002CC6C end:0x8002CC90
+	extabindex  start:0x800409E0 end:0x800409F8
+	.text       start:0x8040A548 end:0x8040A7F0
+	.ctors      start:0x804626D0 end:0x804626D4
+
+engine/gtl/nw4r_fx_reverb_hi_shutdown.cpp:
+	extab       start:0x8002CC90 end:0x8002CC98
+	extabindex  start:0x800409F8 end:0x80040A04
+	.text       start:0x8040A7F0 end:0x8040A850
+
+engine/gtl/gtl_fx_reverb_hi_params.cpp:
+	.text       start:0x8040A850 end:0x8040A858
+
+engine/gtl/nw4r_fx_reverb_hi.cpp:
+	extab       start:0x8002CC98 end:0x8002CCA0
+	extabindex  start:0x80040A04 end:0x80040A10
+	.text       start:0x8040A858 end:0x8040A8A8
+
+engine/gtl/gtl_nw4r_fx_reverb_hi_dpl2.cpp:
+	extab       start:0x8002CCA0 end:0x8002CCC4
+	extabindex  start:0x80040A10 end:0x80040A28
+	.text       start:0x8040A8A8 end:0x8040AB50
+	.ctors      start:0x804626D4 end:0x804626D8
+
+engine/gtl/fx_reverb_hi_dpl2.cpp:
+	extab       start:0x8002CCC4 end:0x8002CCD4
+	extabindex  start:0x80040A28 end:0x80040A40
+	.text       start:0x8040AB50 end:0x8040AD68
+
+engine/gtl/gtl_nw4r_fx_reverb_std_part1.cpp:
+	extab       start:0x8002CCD4 end:0x8002CD00
+	extabindex  start:0x80040A40 end:0x80040A64
+	.text       start:0x8040AD68 end:0x8040B02C
+	.ctors      start:0x804626D8 end:0x804626DC
+
+engine/gtl/nw4r_fx_reverb_std_shutdown.cpp:
+	extab       start:0x8002CD00 end:0x8002CD08
+	extabindex  start:0x80040A64 end:0x80040A70
+	.text       start:0x8040B02C end:0x8040B08C
+
+engine/gtl/fx_reverb_std_params.cpp:
+	extab       start:0x8002CD08 end:0x8002CD10
+	extabindex  start:0x80040A70 end:0x80040A7C
+	.text       start:0x8040B08C end:0x8040B210
+
+engine/gtl/gtl_nw4r_fx_reverb_std_part2.cpp:
+	extab       start:0x8002CD10 end:0x8002CD18
+	extabindex  start:0x80040A7C end:0x80040A88
+	.text       start:0x8040B210 end:0x8040B260
+
+engine/gtl/gtl_remote_audio_channel.cpp:
+	extab       start:0x8002CD18 end:0x8002CECC
+	extabindex  start:0x80040A88 end:0x80040B90
+	.text       start:0x8040B260 end:0x8040C2C8
+	.ctors      start:0x804626DC end:0x804626EC
+
+engine/gtl/gtl_audio_worker_strm_player.cpp:
+	extab       start:0x8002CECC end:0x8002D138
+	extabindex  start:0x80040B90 end:0x80040C8C
+	.text       start:0x8040C2C8 end:0x8040D32C
+	.ctors      start:0x804626EC end:0x804626F4
+
+engine/gtl/gtl_strm_player_pause.cpp:
+	extab       start:0x8002D138 end:0x8002D190
+	extabindex  start:0x80040C8C end:0x80040C98
+	.text       start:0x8040D32C end:0x8040D400
+
+engine/gtl/gtl_strm_player_streaming.cpp:
+	extab       start:0x8002D190 end:0x8002D4D8
+	extabindex  start:0x80040C98 end:0x80040D58
+	.text       start:0x8040D400 end:0x8040E908
+
+engine/gtl/strm_player_load_command.cpp:
+	extab       start:0x8002D4D8 end:0x8002D504
+	extabindex  start:0x80040D58 end:0x80040D64
+	.text       start:0x8040E908 end:0x8040E9BC
+
+engine/gtl/gtl_voice_and_stream_tasks.cpp:
+	extab       start:0x8002D504 end:0x8002D85C
+	extabindex  start:0x80040D64 end:0x80040E54
+	.text       start:0x8040E9BC end:0x8040FD50
+	.ctors      start:0x804626F4 end:0x80462700
+
+engine/gtl/gtl_voice_control.cpp:
+	extab       start:0x8002D85C end:0x8002D8D8
+	extabindex  start:0x80040E54 end:0x80040ED8
+	.text       start:0x8040FD50 end:0x8041095C
+
+engine/gtl/gtl_voice_pool.cpp:
+	extab       start:0x8002D8D8 end:0x8002DAB4
+	extabindex  start:0x80040ED8 end:0x80040FA4
+	.text       start:0x8041095C end:0x80412070
+	.ctors      start:0x80462700 end:0x80462710
+
+engine/gtl/gtl_dvd_file_stream.cpp:
+	extab       start:0x8002DAB4 end:0x8002DAE0
+	extabindex  start:0x80040FA4 end:0x80040FC8
+	.text       start:0x80412070 end:0x80412370
+	.ctors      start:0x80462710 end:0x80462714
+
+engine/gtl/dvd_file_stream_close.cpp:
+	extab       start:0x8002DAE0 end:0x8002DAE8
+	extabindex  start:0x80040FC8 end:0x80040FD4
+	.text       start:0x80412370 end:0x804123C0
+
+engine/gtl/dvd_file_stream_read.cpp:
+	extab       start:0x8002DAE8 end:0x8002DAF0
+	extabindex  start:0x80040FD4 end:0x80040FE0
+	.text       start:0x804123C0 end:0x80412448
+
+engine/gtl/gtl_dvd_file_stream_read_async_part1.cpp:
+	extab       start:0x8002DAF0 end:0x8002DAF8
+	extabindex  start:0x80040FE0 end:0x80040FEC
+	.text       start:0x80412448 end:0x8041253C
+
+engine/gtl/gtl_dvd_file_stream_read_part2.cpp:
+	.text       start:0x8041253C end:0x80412578
+
+engine/gtl/gtl_dvd_file_stream_read_async_part2.cpp:
+	extab       start:0x8002DAF8 end:0x8002DB00
+	extabindex  start:0x80040FEC end:0x80040FF8
+	.text       start:0x80412578 end:0x804125F8
+
+engine/gtl/dvd_file_stream_seek_cancel.cpp:
+	.text       start:0x804125F8 end:0x80412608
+
+engine/gtl/gtl_dvd_file_stream_cancel.cpp:
+	extab       start:0x8002DB00 end:0x8002DB08
+	extabindex  start:0x80040FF8 end:0x80041004
+	.text       start:0x80412608 end:0x80412664
+
+engine/gtl/gtl_dvd_file_stream_and_device.cpp:
+	extab       start:0x8002DB08 end:0x8002DB48
+	extabindex  start:0x80041004 end:0x80041028
+	.text       start:0x80412664 end:0x80412858
+	.ctors      start:0x80462714 end:0x80462718
+
+engine/gtl/gtl_file_io_device_dvd_open_part1.cpp:
+	extab       start:0x8002DB48 end:0x8002DB50
+	extabindex  start:0x80041028 end:0x80041034
+	.text       start:0x80412858 end:0x80412938
+
+engine/gtl/gtl_file_io_device_dvd_close_part1.cpp:
+	extab       start:0x8002DB50 end:0x8002DB58
+	extabindex  start:0x80041034 end:0x80041040
+	.text       start:0x80412938 end:0x804129C8
+
+engine/gtl/file_io_device_dvd_read.cpp:
+	extab       start:0x8002DB58 end:0x8002DB60
+	extabindex  start:0x80041040 end:0x8004104C
+	.text       start:0x804129C8 end:0x80412AE8
+
+engine/gtl/gtl_file_io_device_dvd_seek.cpp:
+	extab       start:0x8002DB60 end:0x8002DB68
+	extabindex  start:0x8004104C end:0x80041058
+	.text       start:0x80412AE8 end:0x80412B64
+
+engine/gtl/gtl_file_io_device_dvd_size.cpp:
+	extab       start:0x8002DB68 end:0x8002DB70
+	extabindex  start:0x80041058 end:0x80041064
+	.text       start:0x80412B64 end:0x80412BC4
+
+engine/gtl/gtl_file_io_device_dvd_fileinfo.cpp:
+	extab       start:0x8002DB70 end:0x8002DB78
+	extabindex  start:0x80041064 end:0x80041070
+	.text       start:0x80412BC4 end:0x80412C6C
+
+engine/gtl/gtl_file_io_device_dvd_cancel_part1.cpp:
+	extab       start:0x8002DB78 end:0x8002DB80
+	extabindex  start:0x80041070 end:0x8004107C
+	.text       start:0x80412C6C end:0x80412CD0
+
+engine/gtl/gtl_file_io_dvd_find_first.cpp:
+	extab       start:0x8002DB80 end:0x8002DBB4
+	extabindex  start:0x8004107C end:0x80041088
+	.text       start:0x80412CD0 end:0x804130C4
+
+engine/gtl/file_io_free_wrapper.cpp:
+	.text       start:0x804130C4 end:0x804130C8
+
+engine/gtl/file_io_device_dvd_find_next.cpp:
+	extab       start:0x8002DBB4 end:0x8002DBCC
+	extabindex  start:0x80041088 end:0x80041094
+	.text       start:0x804130C8 end:0x80413360
+
+engine/gtl/gtl_file_io_device_dvd_close_part2.cpp:
+	extab       start:0x8002DBCC end:0x8002DBD4
+	extabindex  start:0x80041094 end:0x800410A0
+	.text       start:0x80413360 end:0x80413430
+
+engine/gtl/file_io_device_dvd_read_callbacks.cpp:
+	extab       start:0x8002DBD4 end:0x8002DBE4
+	extabindex  start:0x800410A0 end:0x800410B8
+	.text       start:0x80413430 end:0x8041364C
+
+engine/gtl/gtl_file_io_device_dvd_open_part2.cpp:
+	extab       start:0x8002DBE4 end:0x8002DBEC
+	extabindex  start:0x800410B8 end:0x800410C4
+	.text       start:0x8041364C end:0x80413768
+
+engine/gtl/file_io_device_dvd_async_read.cpp:
+	extab       start:0x8002DBEC end:0x8002DBF4
+	extabindex  start:0x800410C4 end:0x800410D0
+	.text       start:0x80413768 end:0x8041385C
+
+engine/gtl/file_io_device_dvd_seek.cpp:
+	extab       start:0x8002DBF4 end:0x8002DBFC
+	extabindex  start:0x800410D0 end:0x800410DC
+	.text       start:0x8041385C end:0x80413924
+
+engine/gtl/gtl_file_io_device_dvd_cancel_part2.cpp:
+	extab       start:0x8002DBFC end:0x8002DC04
+	extabindex  start:0x800410DC end:0x800410E8
+	.text       start:0x80413924 end:0x8041398C
+
+engine/gtl/gtl_file_io_device_dvd_poll.cpp:
+	extab       start:0x8002DC04 end:0x8002DC0C
+	extabindex  start:0x800410E8 end:0x800410F4
+	.text       start:0x8041398C end:0x80413AAC
+
+engine/gtl/gtl_file_io_device_dvd_query.cpp:
+	extab       start:0x8002DC0C end:0x8002DC14
+	extabindex  start:0x800410F4 end:0x80041100
+	.text       start:0x80413AAC end:0x80413AFC
+
+engine/gtl/gtl_file_io_device_root_path.cpp:
+	extab       start:0x8002DC14 end:0x8002DC24
+	extabindex  start:0x80041100 end:0x80041118
+	.text       start:0x80413AFC end:0x80413C2C
+
+engine/gtl/gtl_file_io_device_base.cpp:
+	.text       start:0x80413C2C end:0x80413D24
+
+engine/gtl/fileio_string_storage.cpp:
+	extab       start:0x8002DC24 end:0x8002DC70
+	extabindex  start:0x80041118 end:0x80041130
+	.text       start:0x80413D24 end:0x80413FB8
+
+engine/gtl/gtl_file_io_devices_and_registry.cpp:
+	extab       start:0x8002DCD0 end:0x8002DE84
+	extabindex  start:0x8004113C end:0x800411B4
+	.text       start:0x804143A8 end:0x80415A88
+
+game/system/file_io_facade.cpp:
+	extab       start:0x8002DE84 end:0x8002E09C
+	extabindex  start:0x800411B4 end:0x80041268
+	.text       start:0x80415A88 end:0x804170C0
+
+engine/gtl/gtl_fileio_path_registry.cpp:
+	extab       start:0x8002E09C end:0x8002E1A4
+	extabindex  start:0x80041268 end:0x800412BC
+	.text       start:0x804170C0 end:0x80418364
+	.ctors      start:0x80462718 end:0x8046271C
+
+engine/gtl/gtl_file_io_device_hio.cpp:
+	extab       start:0x8002E1A4 end:0x8002E1D8
+	extabindex  start:0x800412BC end:0x800412EC
+	.text       start:0x80418364 end:0x80418C3C
+
+engine/gtl/file_io_device_hio_open.cpp:
+	extab       start:0x8002E1D8 end:0x8002E1E0
+	extabindex  start:0x800412EC end:0x800412F8
+	.text       start:0x80418C3C end:0x80418D48
+
+engine/gtl/file_io_device_hio_close.cpp:
+	extab       start:0x8002E1E0 end:0x8002E1E8
+	extabindex  start:0x800412F8 end:0x80041304
+	.text       start:0x80418D48 end:0x80418DB8
+
+engine/gtl/file_io_device_hio_read.cpp:
+	extab       start:0x8002E1E8 end:0x8002E1F0
+	extabindex  start:0x80041304 end:0x80041310
+	.text       start:0x80418DB8 end:0x80418E40
+
+engine/gtl/gtl_file_io_device_hio_write.cpp:
+	extab       start:0x8002E1F0 end:0x8002E1F8
+	extabindex  start:0x80041310 end:0x8004131C
+	.text       start:0x80418E40 end:0x80418EC0
+
+engine/gtl/file_io_device_hio_seek.cpp:
+	extab       start:0x8002E1F8 end:0x8002E200
+	extabindex  start:0x8004131C end:0x80041328
+	.text       start:0x80418EC0 end:0x80418F58
+
+engine/gtl/file_io_device_hio_get_file_size.cpp:
+	extab       start:0x8002E200 end:0x8002E208
+	extabindex  start:0x80041328 end:0x80041334
+	.text       start:0x80418F58 end:0x80418FEC
+
+engine/gtl/file_io_device_hio_stat.cpp:
+	extab       start:0x8002E208 end:0x8002E210
+	extabindex  start:0x80041334 end:0x80041340
+	.text       start:0x80418FEC end:0x8041909C
+
+engine/gtl/gtl_file_io_device_hio_stub.cpp:
+	.text       start:0x8041909C end:0x804190A4
+
+engine/gtl/gtl_file_io_device_hio_flush.cpp:
+	extab       start:0x8002E210 end:0x8002E218
+	extabindex  start:0x80041340 end:0x8004134C
+	.text       start:0x804190A4 end:0x804190EC
+
+engine/gtl/gtl_file_io_device_hio_fmem.cpp:
+	extab       start:0x8002E218 end:0x8002E264
+	extabindex  start:0x8004134C end:0x80041370
+	.text       start:0x804190EC end:0x80419394
+
+engine/gtl/gtl_file_io_device_fmem_open.cpp:
+	extab       start:0x8002E264 end:0x8002E26C
+	extabindex  start:0x80041370 end:0x8004137C
+	.text       start:0x80419394 end:0x804194C4
+
+engine/gtl/gtl_file_io_device_fmem_close.cpp:
+	extab       start:0x8002E26C end:0x8002E274
+	extabindex  start:0x8004137C end:0x80041388
+	.text       start:0x804194C4 end:0x804196A4
+
+engine/gtl/gtl_file_io_device_fmem_read.cpp:
+	extab       start:0x8002E274 end:0x8002E27C
+	extabindex  start:0x80041388 end:0x80041394
+	.text       start:0x804196A4 end:0x8041988C
+
+engine/gtl/gtl_file_io_device_fmem_write.cpp:
+	extab       start:0x8002E27C end:0x8002E284
+	extabindex  start:0x80041394 end:0x800413A0
+	.text       start:0x8041988C end:0x80419A74
+
+engine/gtl/gtl_file_io_device_fmem_seek.cpp:
+	extab       start:0x8002E284 end:0x8002E28C
+	extabindex  start:0x800413A0 end:0x800413AC
+	.text       start:0x80419A74 end:0x80419C8C
+
+engine/gtl/gtl_fileio_fmem_get_file_size.cpp:
+	extab       start:0x8002E28C end:0x8002E294
+	extabindex  start:0x800413AC end:0x800413B8
+	.text       start:0x80419C8C end:0x8041A0DC
+
+engine/gtl/gtl_file_io_callback.cpp:
+	extab       start:0x8002E294 end:0x8002E29C
+	extabindex  start:0x800413B8 end:0x800413C4
+	.text       start:0x8041A0DC end:0x8041A13C
+
+engine/gtl/gtl_file_io_device_fmem_stat.cpp:
+	extab       start:0x8002E29C end:0x8002E2A4
+	extabindex  start:0x800413C4 end:0x800413D0
+	.text       start:0x8041A13C end:0x8041A1F4
+
+engine/gtl/gtl_file_io_device_fmem_stubs_part1.cpp:
+	.text       start:0x8041A1F4 end:0x8041A20C
+
+engine/gtl/file_io_device_fmem_delete.cpp:
+	extab       start:0x8002E2A4 end:0x8002E2AC
+	extabindex  start:0x800413D0 end:0x800413DC
+	.text       start:0x8041A20C end:0x8041A5F8
+
+engine/gtl/gtl_file_io_device_fmem_stubs_part2.cpp:
+	.text       start:0x8041A5F8 end:0x8041A608
+
+engine/gtl/file_io_device_fmem_nand_move.cpp:
+	extab       start:0x8002E2AC end:0x8002E2B4
+	extabindex  start:0x800413DC end:0x800413E8
+	.text       start:0x8041A608 end:0x8041A898
+
+engine/gtl/gtl_file_io_device_fmem_part1.cpp:
+	.text       start:0x8041A898 end:0x8041A8A0
+
+engine/gtl/file_io_fmem_nand_move.cpp:
+	extab       start:0x8002E2B4 end:0x8002E2BC
+	extabindex  start:0x800413E8 end:0x800413F4
+	.text       start:0x8041A8A0 end:0x8041AB90
+
+engine/gtl/file_io_directory_size.cpp:
+	extab       start:0x8002E2BC end:0x8002E2F4
+	extabindex  start:0x800413F4 end:0x80041400
+	.text       start:0x8041AB90 end:0x8041B040
+
+engine/gtl/gtl_file_io_device_fmem_disk_space.cpp:
+	extab       start:0x8002E2F4 end:0x8002E2FC
+	extabindex  start:0x80041400 end:0x8004140C
+	.text       start:0x8041B040 end:0x8041B6A4
+
+engine/gtl/gtl_fmem_file_io_device.cpp:
+	extab       start:0x8002E2FC end:0x8002E410
+	extabindex  start:0x8004140C end:0x80041418
+	.text       start:0x8041B6A4 end:0x8041C290
+
+engine/gtl/gtl_file_io_find_handle.cpp:
+	extab       start:0x8002E410 end:0x8002E438
+	extabindex  start:0x80041418 end:0x8004143C
+	.text       start:0x8041C290 end:0x8041C598
+
+engine/gtl/gtl_fileio_fmem_directory.cpp:
+	extab       start:0x8002E438 end:0x8002E47C
+	extabindex  start:0x8004143C end:0x80041448
+	.text       start:0x8041C598 end:0x8041C840
+
+engine/gtl/gtl_file_io_device_fmem_part2.cpp:
+	extab       start:0x8002E47C end:0x8002E484
+	extabindex  start:0x80041448 end:0x80041454
+	.text       start:0x8041C840 end:0x8041C8F4
+
+engine/gtl/gtl_file_io_fmem_create_directory.cpp:
+	extab       start:0x8002E484 end:0x8002E48C
+	extabindex  start:0x80041454 end:0x80041460
+	.text       start:0x8041C8F4 end:0x8041CCF0
+
+engine/gtl/gtl_fileio_fmem_remove_directory.cpp:
+	extab       start:0x8002E48C end:0x8002E494
+	extabindex  start:0x80041460 end:0x8004146C
+	.text       start:0x8041CCF0 end:0x8041D0DC
+
+engine/gtl/gtl_file_io_device_fmem_part3.cpp:
+	.text       start:0x8041D0DC end:0x8041D0E4
+
+engine/gtl/gtl_fileio_device_fmem_nand.cpp:
+	extab       start:0x8002E494 end:0x8002E4B8
+	extabindex  start:0x8004146C end:0x80041478
+	.text       start:0x8041D0E4 end:0x8041D344
+
+game/system/fileio_free_thunk.cpp:
+	.text       start:0x8041D344 end:0x8041D348
+
+engine/gtl/gtl_fileio_device_fmem_read_async.cpp:
+	extab       start:0x8002E4B8 end:0x8002E4C0
+	extabindex  start:0x80041478 end:0x80041484
+	.text       start:0x8041D348 end:0x8041D448
+
+engine/gtl/gtl_fileio_fmem_write_async.cpp:
+	extab       start:0x8002E4C0 end:0x8002E4C8
+	extabindex  start:0x80041484 end:0x80041490
+	.text       start:0x8041D448 end:0x8041D570
+
+engine/gtl/file_io_device_fmem_seek.cpp:
+	extab       start:0x8002E4C8 end:0x8002E4D0
+	extabindex  start:0x80041490 end:0x8004149C
+	.text       start:0x8041D570 end:0x8041D68C
+
+engine/gtl/gtl_file_io_device_fmem_stub.cpp:
+	.text       start:0x8041D68C end:0x8041D694
+
+engine/gtl/gtl_file_io_device_fmem_query.cpp:
+	extab       start:0x8002E4D0 end:0x8002E4D8
+	extabindex  start:0x8004149C end:0x800414A8
+	.text       start:0x8041D694 end:0x8041D6EC
+
+engine/gtl/gtl_file_io_device_fmem_part4.cpp:
+	extab       start:0x8002E4D8 end:0x8002E4E0
+	extabindex  start:0x800414A8 end:0x800414B4
+	.text       start:0x8041D6EC end:0x8041D728
+
+engine/gtl/gtl_file_io_device_fmem_vfunc.cpp:
+	.text       start:0x8041D728 end:0x8041D730
+
+engine/gtl/gtl_file_io_device_fmem_part5.cpp:
+	extab       start:0x8002E4E0 end:0x8002E4E8
+	extabindex  start:0x800414B4 end:0x800414C0
+	.text       start:0x8041D730 end:0x8041D76C
+
+engine/gtl/gtl_fileio_nand_save_area_check.cpp:
+	extab       start:0x8002E4E8 end:0x8002E4F8
+	extabindex  start:0x800414C0 end:0x800414D8
+	.text       start:0x8041D76C end:0x8041DC58
+
+engine/gtl/gtl_move_file_callback.cpp:
+	extab       start:0x8002E4F8 end:0x8002E500
+	extabindex  start:0x800414D8 end:0x800414E4
+	.text       start:0x8041DC58 end:0x8041DEAC
+
+engine/gtl/gtl_check_save_area_callback.cpp:
+	extab       start:0x8002E500 end:0x8002E508
+	extabindex  start:0x800414E4 end:0x800414F0
+	.text       start:0x8041DEAC end:0x8041DEEC
+
+engine/gtl/gtl_file_nand_callbacks.cpp:
+	extab       start:0x8002E508 end:0x8002E518
+	extabindex  start:0x800414F0 end:0x80041508
+	.text       start:0x8041DEEC end:0x8041E134
+
+engine/gtl/gtl_file_directory_callbacks.cpp:
+	extab       start:0x8002E518 end:0x8002E528
+	extabindex  start:0x80041508 end:0x80041520
+	.text       start:0x8041E134 end:0x8041E1E8
+
+engine/gtl/gtl_create_directory_callback.cpp:
+	extab       start:0x8002E528 end:0x8002E530
+	extabindex  start:0x80041520 end:0x8004152C
+	.text       start:0x8041E1E8 end:0x8041E25C
+
+engine/gtl/gtl_callback_find_first_file_dtor.cpp:
+	extab       start:0x8002E530 end:0x8002E538
+	extabindex  start:0x8004152C end:0x80041538
+	.text       start:0x8041E25C end:0x8041E2C8
+
+engine/gtl/gtl_file_io_nand_dir_listing.cpp:
+	extab       start:0x8002E538 end:0x8002E5C0
+	extabindex  start:0x80041538 end:0x80041544
+	.text       start:0x8041E2C8 end:0x8041E85C
+
+engine/gtl/gtl_callback_file_list_dtor.cpp:
+	extab       start:0x8002E5C0 end:0x8002E5C8
+	extabindex  start:0x80041544 end:0x80041550
+	.text       start:0x8041E85C end:0x8041E8CC
+
+engine/gtl/gtl_file_io_callbacks_part1.cpp:
+	extab       start:0x8002E5C8 end:0x8002E624
+	extabindex  start:0x80041550 end:0x80041574
+	.text       start:0x8041E8CC end:0x8041EDF8
+
+engine/gtl/gtl_file_callbacks_part1.cpp:
+	extab       start:0x8002E624 end:0x8002E634
+	extabindex  start:0x80041574 end:0x8004158C
+	.text       start:0x8041EDF8 end:0x8041EEE4
+
+engine/gtl/gtl_file_delete_callback.cpp:
+	extab       start:0x8002E634 end:0x8002E63C
+	extabindex  start:0x8004158C end:0x80041598
+	.text       start:0x8041EEE4 end:0x8041EF58
+
+engine/gtl/gtl_callback_get_file_size.cpp:
+	extab       start:0x8002E63C end:0x8002E644
+	extabindex  start:0x80041598 end:0x800415A4
+	.text       start:0x8041EF58 end:0x8041EF98
+
+engine/gtl/gtl_file_size_callback.cpp:
+	extab       start:0x8002E644 end:0x8002E64C
+	extabindex  start:0x800415A4 end:0x800415B0
+	.text       start:0x8041EF98 end:0x8041F08C
+
+engine/gtl/gtl_callback_set_file_pointer.cpp:
+	extab       start:0x8002E64C end:0x8002E654
+	extabindex  start:0x800415B0 end:0x800415BC
+	.text       start:0x8041F08C end:0x8041F0CC
+
+engine/gtl/gtl_file_io_callbacks_part2.cpp:
+	extab       start:0x8002E654 end:0x8002E664
+	extabindex  start:0x800415BC end:0x800415D4
+	.text       start:0x8041F0CC end:0x8041F1CC
+
+engine/gtl/gtl_file_callbacks_part2.cpp:
+	extab       start:0x8002E664 end:0x8002E674
+	extabindex  start:0x800415D4 end:0x800415EC
+	.text       start:0x8041F1CC end:0x8041F2E8
+
+engine/gtl/gtl_callback_read_file_complete.cpp:
+	extab       start:0x8002E674 end:0x8002E67C
+	extabindex  start:0x800415EC end:0x800415F8
+	.text       start:0x8041F2E8 end:0x8041F3A8
+
+engine/gtl/gtl_ccallback_create_file.cpp:
+	extab       start:0x8002E67C end:0x8002E684
+	extabindex  start:0x800415F8 end:0x80041604
+	.text       start:0x8041F3A8 end:0x8041F420
+
+engine/gtl/gtl_fmem_create_file_callback.cpp:
+	extab       start:0x8002E684 end:0x8002E68C
+	extabindex  start:0x80041604 end:0x80041610
+	.text       start:0x8041F420 end:0x8041F5F4
+
+engine/gtl/gtl_callback_open_file.cpp:
+	extab       start:0x8002E68C end:0x8002E694
+	extabindex  start:0x80041610 end:0x8004161C
+	.text       start:0x8041F5F4 end:0x8041F634
+
+engine/gtl/gtl_fileio_padmem_and_string.cpp:
+	extab       start:0x8002E694 end:0x8002E768
+	extabindex  start:0x8004161C end:0x8004167C
+	.text       start:0x8041F634 end:0x8041FF74
+	.ctors      start:0x8046271C end:0x80462720
+
+engine/gtl/gtl_file_io_padmem_handle.cpp:
+	extab       start:0x8002E768 end:0x8002E778
+	extabindex  start:0x8004167C end:0x80041694
+	.text       start:0x8041FF74 end:0x8042001C
+
+engine/gtl/gtl_file_io_device_padmem_part1.cpp:
+	extab       start:0x8002E778 end:0x8002E780
+	extabindex  start:0x80041694 end:0x800416A0
+	.text       start:0x8042001C end:0x80420154
+
+engine/gtl/gtl_fileio_padmem_transfer.cpp:
+	extab       start:0x8002E780 end:0x8002E788
+	extabindex  start:0x800416A0 end:0x800416AC
+	.text       start:0x80420154 end:0x80420288
+
+engine/gtl/gtl_file_io_device_padmem_part2.cpp:
+	extab       start:0x8002E788 end:0x8002E790
+	extabindex  start:0x800416AC end:0x800416B8
+	.text       start:0x80420288 end:0x804203F0
+
+engine/gtl/gtl_file_io_padmem_open.cpp:
+	extab       start:0x8002E790 end:0x8002E798
+	extabindex  start:0x800416B8 end:0x800416C4
+	.text       start:0x804203F0 end:0x80420498
+
+engine/gtl/file_io_padmem_async_callback.cpp:
+	extab       start:0x8002E798 end:0x8002E7A0
+	extabindex  start:0x800416C4 end:0x800416D0
+	.text       start:0x80420498 end:0x804205A4
+
+engine/gtl/gtl_file_io_padmem_read_async.cpp:
+	extab       start:0x8002E7A0 end:0x8002E7A8
+	extabindex  start:0x800416D0 end:0x800416DC
+	.text       start:0x804205A4 end:0x804206E4
+
+engine/gtl/pad_memory_io_completion.cpp:
+	extab       start:0x8002E7A8 end:0x8002E7B0
+	extabindex  start:0x800416DC end:0x800416E8
+	.text       start:0x804206E4 end:0x804207D4
+
+engine/gtl/file_io_device_padmem_async.cpp:
+	extab       start:0x8002E7B0 end:0x8002E7B8
+	extabindex  start:0x800416E8 end:0x800416F4
+	.text       start:0x804207D4 end:0x80420914
+
+engine/gtl/gtl_file_io_device_padmem_part3.cpp:
+	extab       start:0x8002E7B8 end:0x8002E7C0
+	extabindex  start:0x800416F4 end:0x80041700
+	.text       start:0x80420914 end:0x80420B50
+
+engine/gtl/gtl_file_io_device_padmem_vfunc20.cpp:
+	.text       start:0x80420B50 end:0x80420B58
+
+engine/gtl/gtl_file_io_device_padmem_part4.cpp:
+	extab       start:0x8002E7C0 end:0x8002E7C8
+	extabindex  start:0x80041700 end:0x8004170C
+	.text       start:0x80420B58 end:0x80420B9C
+
+engine/gtl/file_io_device_padmem.cpp:
+	extab       start:0x8002E7C8 end:0x8002E7D0
+	extabindex  start:0x8004170C end:0x80041718
+	.text       start:0x80420B9C end:0x80420BF4
+
+engine/gtl/gtl_file_io_device_padmem_part5.cpp:
+	extab       start:0x8002E7D0 end:0x8002E7D8
+	extabindex  start:0x80041718 end:0x80041724
+	.text       start:0x80420BF4 end:0x80420C30
+
+engine/gtl/gtl_file_io_device_padmem_part6.cpp:
+	.text       start:0x80420C30 end:0x80420C40
+
+engine/gtl/gtl_file_io_device_padmem_part7.cpp:
+	extab       start:0x8002E7D8 end:0x8002E7E0
+	extabindex  start:0x80041724 end:0x80041730
+	.text       start:0x80420C40 end:0x80420CB0
+
+sdk/timer_tick_frequency.cpp:
+	.text       start:0x80420CB0 end:0x80420CD0
+
+engine/gtl/gtl_memory_allocators_and_heaps.cpp:
+	extab       start:0x8002E7E8 end:0x8002E878
+	extabindex  start:0x8004173C end:0x80041814
+	.text       start:0x80420D68 end:0x80421FE8
+
+engine/gtl/gtl_heap_allocators.cpp:
+	extab       start:0x8002E878 end:0x8002E980
+	extabindex  start:0x80041814 end:0x80041940
+	.text       start:0x80421FE8 end:0x80422F10
+
+engine/gtl/gx_render_state_and_texture_upload.cpp:
+	extab       start:0x8002E980 end:0x8002EA10
+	extabindex  start:0x80041940 end:0x80041A18
+	.text       start:0x80422F10 end:0x80424508
+	.sdata2     start:0x805E2450 end:0x805E2458
+
+engine/gtl/gx_renderer_state_and_resources.cpp:
+	extab       start:0x8002EA10 end:0x8002EBF8
+	extabindex  start:0x80041A18 end:0x80041C04
+	.text       start:0x80424508 end:0x804287D0
+	.sdata2     start:0x805E2470 end:0x805E2478
+
+engine/gtl/gx_renderer_state_and_efb_copy.cpp:
+	extab       start:0x8002EBF8 end:0x8002ECC0
+	extabindex  start:0x80041C04 end:0x80041D30
+	.text       start:0x804287D0 end:0x80429E5C
+
+engine/gtl/engine_render_cache_and_texture_load.cpp:
+	extab       start:0x8002ECC0 end:0x8002EDBC
+	extabindex  start:0x80041D30 end:0x80041E38
+	.text       start:0x80429E5C end:0x8042B0A4
+
+engine/gtl/gtl_graphics_texture_buffer_resources.cpp:
+	extab       start:0x8002EDBC end:0x8002EF30
+	extabindex  start:0x80041E38 end:0x80041F70
+	.text       start:0x8042B0A4 end:0x8042C0C8
+
+engine/gtl/gtl_texture_vertex_formats.cpp:
+	extab       start:0x8002EF30 end:0x8002EFEC
+	extabindex  start:0x80041F70 end:0x8004203C
+	.text       start:0x8042C0C8 end:0x8042D650
+
+engine/gtl/gtl_texture_stage_tev_setup.cpp:
+	extab       start:0x8002EFEC end:0x8002F05C
+	extabindex  start:0x8004203C end:0x800420E4
+	.text       start:0x8042D650 end:0x8042EB30
+
+engine/gtl/gx_fifo_vertex_and_tev_helpers.cpp:
+	extab       start:0x8002F05C end:0x8002F12C
+	extabindex  start:0x800420E4 end:0x8004221C
+	.text       start:0x8042EB30 end:0x80430240
+
+engine/gtl/gx_vertex_submit_and_cpu_skinning.cpp:
+	extab       start:0x8002F12C end:0x8002F214
+	extabindex  start:0x8004221C end:0x80042378
+	.text       start:0x80430240 end:0x804311B4
+
+engine/gtl/skin_vertex_transform.cpp:
+	extab       start:0x8002F214 end:0x8002F2B4
+	extabindex  start:0x80042378 end:0x80042468
+	.text       start:0x804311B4 end:0x80432330
+
+game/system/noop_hook_stubs.cpp:
+	.text       start:0x80432330 end:0x804323D8
+
+engine/gtl/gtl_render_state_and_primitive.cpp:
+	extab       start:0x8002F2B4 end:0x8002F37C
+	extabindex  start:0x80042468 end:0x80042558
+	.text       start:0x804323D8 end:0x80433528
+
+engine/gtl/gtl_builtin_effect_resources.cpp:
+	extab       start:0x8002F37C end:0x8002F414
+	extabindex  start:0x80042558 end:0x800425C4
+	.text       start:0x80433528 end:0x80434998
+	.sdata2     start:0x805E2530 end:0x805E2538
+
+engine/gtl/gtl_texture_projection_input_device.cpp:
+	extab       start:0x8002F414 end:0x8002F4B4
+	extabindex  start:0x800425C4 end:0x800426B4
+	.text       start:0x80434998 end:0x804360D0
+
+engine/gtl/gtl_pad_drivers_gc_classic_freestyle.cpp:
+	extab       start:0x8002F4B4 end:0x8002F514
+	extabindex  start:0x800426B4 end:0x80042744
+	.text       start:0x804360D0 end:0x80436FA0
+	.sdata2     start:0x805E2558 end:0x805E2568
+
+game/system/input_device_drivers.cpp:
+	extab       start:0x8002F514 end:0x8002F58C
+	extabindex  start:0x80042744 end:0x800427F8
+	.text       start:0x80436FA0 end:0x80438310
+	.ctors      start:0x80462720 end:0x80462724
+
+engine/gtl/gtl_vector_matrix_math.cpp:
+	extab       start:0x8002F58C end:0x8002F68C
+	extabindex  start:0x800427F8 end:0x80042960
+	.text       start:0x80438310 end:0x8043B91C
+	.data       start:0x804DECC8 end:0x804DED01
+	.sdata      start:0x805DC528 end:0x805DC530
+	.sdata2     start:0x805E25C0 end:0x805E264C
+
+engine/gtl/gtl_sound_buffer_stream_resources.cpp:
+	extab       start:0x8002F68C end:0x8002FA4C
+	extabindex  start:0x80042960 end:0x80042A44
+	.text       start:0x8043B91C end:0x8043E858
+	.rodata     start:0x804AA928 end:0x804AA9B8
+	.data       start:0x804DED08 end:0x804DEDA8
+	.sdata      start:0x805DC530 end:0x805DC558
+
+engine/gtl/sound_resource_chunk_tags.cpp:
+	extab       start:0x8002FA4C end:0x8002FA54
+	extabindex  start:0x80042A44 end:0x80042A50
+	.text       start:0x8043E858 end:0x8043EAC4
+	.ctors      start:0x80462724 end:0x80462728
+
+engine/gtl/gtl_cfile_io.cpp:
+	extab       start:0x8002FA54 end:0x8002FB18
+	extabindex  start:0x80042A50 end:0x80042AD4
+	.text       start:0x8043EFB4 end:0x8043F960
+	.rodata     start:0x804AAAE8 end:0x804AAB98
+	.data       start:0x804DEE48 end:0x804DEE70
+	.sdata      start:0x805DC560 end:0x805DC570
